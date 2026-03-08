@@ -89,85 +89,132 @@ function applyVideoAction(data) {
 }
 
 // --- 2. URL VE YÖNLENDİRME MERKEZİ ---
-// Oda içinde video (URL) değiştiğinde veya yeni bir odaya girişteki 
+// Oda içinde video (URL) değiştiğinde veya yeni bir odaya girişteki
 // ağır senkronizasyon işlemlerini yönetir.
-function handleServerAction(data) {
-    isRemoteAction = true;
-    
-    if (data.type === 'URL_CHANGE' || data.type === 'SYNC') {
-        const currentVideoId = getVideoId(location.href);
-        const incomingVideoId = getVideoId(data.newUrl);
+//
+// Önceki yapıda isRemoteAction = true set ediliyordu ama false'a hiç
+// dönülmüyordu — bu kullanıcı girişlerini kalıcı olarak bloke eden bir bug'dı.
+// Şimdi her eylem tipi kendi handler'ına sahip, withRemoteAction üzerinden geçiyor.
 
-        // Eğer farklı bir videoya geçiliyorsa sayfayı yönlendir
-        if (currentVideoId !== incomingVideoId) {
-            if (data.type === 'SYNC') {
-                sessionStorage.setItem('pendingSyncTime', data.time);
-                sessionStorage.setItem('pendingSyncState', data.state);
-            }
-            sessionStorage.setItem('isRemoteNavigating', 'true');
-            window.location.href = data.newUrl;
-            return; 
-        }
+function handleUrlChange(data) {
+    const currentVideoId = getVideoId(location.href);
+    const incomingVideoId = getVideoId(data.newUrl);
+
+    // Farklı bir videoya geçiliyorsa sayfayı yönlendir.
+    // URL_CHANGE'de pending sync gerekmez; video en baştan açılır.
+    if (currentVideoId !== incomingVideoId) {
+        sessionStorage.setItem('isRemoteNavigating', 'true');
+        window.location.href = data.newUrl;
+        return;
     }
 
-    // Eğer video zaten aynıysa, sadece durum (Play/Pause) güncellemesi yap
+    // Aynı video ise sadece play/pause durumunu güncelle.
+    applyVideoAction({ type: data.type, time: data.time, paused: false });
+}
+
+function handleSync(data) {
+    const currentVideoId = getVideoId(location.href);
+    const incomingVideoId = getVideoId(data.newUrl);
+
+    // Farklı video geliyorsa: sync bilgisini sessionStorage'a bırak,
+    // sayfa yüklenince applyPendingSync() bunları uygular.
+    if (currentVideoId !== incomingVideoId) {
+        sessionStorage.setItem('pendingSyncTime', data.time);
+        sessionStorage.setItem('pendingSyncState', data.state);
+        sessionStorage.setItem('isRemoteNavigating', 'true');
+        window.location.href = data.newUrl;
+        return;
+    }
+
+    // Aynı video ise doğrudan uygula.
     applyVideoAction({
         type: data.type,
         time: data.time,
-        paused: (data.type === 'PAUSE' || (data.type === 'SYNC' && !data.state))
+        paused: !data.state,
     });
+}
+
+// Her eylem tipini kendi handler'ına yönlendiren harita.
+// Yeni bir tip eklemek için sadece buraya bir satır eklenir.
+const SERVER_ACTION_HANDLERS = {
+    URL_CHANGE: handleUrlChange,
+    SYNC: handleSync,
+};
+
+function handleServerAction(data) {
+    const handler = SERVER_ACTION_HANDLERS[data.type];
+
+    if (handler) {
+        // withRemoteAction: isRemoteAction'ı güvenli şekilde açıp kapatır.
+        // Önceki bug: bu satır yoktu, flag hiç false'a dönmüyordu.
+        withRemoteAction(() => handler(data));
+    } else {
+        // Bilinmeyen tipleri master controller'a düşür.
+        applyVideoAction(data);
+    }
 }
 
 // --- 3. BAĞLANTI VE DİNLEYİCİLER (CONNECT) ---
 function connect(id) {
-    if (socket) socket.disconnect(); 
-    socket = io(CONFIG.SERVER_URL); 
-    roomId = id;
+    // Varsa eski bağlantıyı temiz kapat; çift bağlantı olmasın.
+    if (state.socket) state.socket.disconnect();
 
-    socket.on('connect', () => {
-        console.log("✅ Connected to server. Room:", roomId);
-        socket.emit('joinRoom', roomId);
-        bypassVisibility(); 
+    state.socket = io(CONFIG.SERVER_URL);
+    state.roomId = id;
+
+    state.socket.on('connect', () => {
+        console.log("✅ Connected to server. Room:", state.roomId);
+        state.socket.emit('joinRoom', state.roomId);
+        bypassVisibility();
     });
 
-    // A. Heartbeat Mekanizması: Sunucu lidere (odadaki ilk kişi) zaman sorar
-    socket.on('heartbeat_request', (data) => {
-        if (video) {
-            socket.emit('heartbeat_response', {
+    // A. Heartbeat Mekanizması: Sunucu lidere (odadaki ilk kişi) zaman sorar.
+    state.socket.on('heartbeat_request', (data) => {
+        if (state.video) {
+            state.socket.emit('heartbeat_response', {
                 roomId: data.roomId,
-                time: video.currentTime,
-                paused: video.paused
+                time: state.video.currentTime,
+                paused: state.video.paused,
             });
         }
     });
 
-    // B. Heartbeat Sync: Sunucudan gelen lider zamanını master controller'a ilet
-    socket.on('heartbeat_sync', (data) => {
+    // B. Heartbeat Sync: Sunucudan gelen lider zamanını master controller'a ilet.
+    state.socket.on('heartbeat_sync', (data) => {
         applyVideoAction({ type: 'HEARTBEAT_SYNC', time: data.time, paused: data.paused });
     });
 
-    // C. Manuel Eylemler: Diğer kullanıcıların Play/Pause/Seek hareketleri
-    socket.on('videoActionFromServer', (data) => {
-        if (data.type === 'URL_CHANGE') {
+    // C. Manuel Eylemler: Diğer kullanıcıların Play/Pause/Seek/URL hareketleri.
+    // URL_CHANGE ve SYNC özel yönlendirme mantığı gerektirdiğinden handleServerAction'a,
+    // diğerleri doğrudan master controller'a gönderilir.
+    state.socket.on('videoActionFromServer', (data) => {
+        if (data.type === 'URL_CHANGE' || data.type === 'SYNC') {
             handleServerAction(data);
         } else {
-            applyVideoAction({ 
+            applyVideoAction({
                 type: data.type,
-                time: data.time, 
-                paused: (data.type === 'PAUSE' || (data.type === 'SYNC' && !data.state)) 
+                time: data.time,
+                paused: (data.type === 'PAUSE'),
             });
         }
     });
 
-    socket.on('userCountUpdate', (count) => {
+    // D. Kullanıcı sayısı güncellemesini storage'a yaz; popup buradan okur.
+    state.socket.on('userCountUpdate', (count) => {
         chrome.storage.local.set({ roomUserCount: count });
     });
 
-    socket.on('getSyncData', (targetId) => {
-        if (video) {
-            socket.emit('sendSyncData', {
-                targetId: targetId,
-                action: { type: 'SYNC', newUrl: location.href, time: video.currentTime, state: !video.paused }
+    // E. Odaya yeni biri girince lider güncel state'i gönderir.
+    state.socket.on('getSyncData', (targetId) => {
+        if (state.video) {
+            state.socket.emit('sendSyncData', {
+                targetId,
+                action: {
+                    type: 'SYNC',
+                    newUrl: location.href,
+                    time: state.video.currentTime,
+                    state: !state.video.paused,
+                },
             });
         }
     });
@@ -175,21 +222,33 @@ function connect(id) {
 
 // --- 4. YARDIMCI VE TAKİP FONKSİYONLARI ---
 
+// Sayfa yönlendirmesi (handleSync) sırasında sessionStorage'a bırakılan
+// zaman ve oynatma durumunu yeni video yüklenince uygular.
 function applyPendingSync() {
     const pendingTime = sessionStorage.getItem('pendingSyncTime');
     const pendingState = sessionStorage.getItem('pendingSyncState');
 
-    if (pendingTime && video) {
-        video.onloadedmetadata = () => {
-            isRemoteAction = true;
-            video.currentTime = parseFloat(pendingTime);
-            if (pendingState === 'true') video.play(); else video.pause();
-            
-            sessionStorage.removeItem('pendingSyncTime');
-            sessionStorage.removeItem('pendingSyncState');
-            setTimeout(() => { isRemoteAction = false; }, 1000);
-        };
-        if (video.readyState >= 1) video.onloadedmetadata();
+    if (!pendingTime || !state.video) return;
+
+    const apply = () => {
+        // withRemoteAction: sync sırasında kendi event'lerimizin sunucuya
+        // gitmesini engeller.
+        withRemoteAction(() => {
+            state.video.currentTime = parseFloat(pendingTime);
+            if (pendingState === 'true') state.video.play();
+            else state.video.pause();
+        });
+
+        sessionStorage.removeItem('pendingSyncTime');
+        sessionStorage.removeItem('pendingSyncState');
+    };
+
+    // Video metadata henüz yüklenmediyse hazır olunca uygula,
+    // yüklendiyse (readyState >= 1) hemen uygula.
+    if (state.video.readyState >= 1) {
+        apply();
+    } else {
+        state.video.onloadedmetadata = apply;
     }
 }
 
@@ -197,25 +256,43 @@ function getVideoId(url) {
     try { return new URL(url).searchParams.get("v"); } catch (e) { return null; }
 }
 
-function checkPageStatus() {
-    if (!socket) return;
+// Eski video elementindeki event listener'ları temizler.
+// attachEvents her çağrıldığında önce bu çalışır; böylece memory leak önlenir.
+function detachEvents(v) {
+    if (!v) return;
+    v.onplay = null;
+    v.onpause = null;
+    v.onseeking = null;
+}
+
+// Yeni video elementine play/pause/seek dinleyicilerini bağlar.
+// Kullanıcı kaynaklı hareketleri sunucuya iletir; remote action sırasında sessiz kalır.
+function attachEvents(v) {
+    detachEvents(state.video); // Önce eskisini temizle
+
+    v.onplay    = () => { if (!state.isRemoteAction && state.socket) state.socket.emit('videoAction', { type: 'PLAY',  roomId: state.roomId }); };
+    v.onpause   = () => { if (!state.isRemoteAction && state.socket) state.socket.emit('videoAction', { type: 'PAUSE', roomId: state.roomId }); };
+    v.onseeking = () => { if (!state.isRemoteAction && state.socket) state.socket.emit('videoAction', { type: 'SEEK',  time: v.currentTime, roomId: state.roomId }); };
+}
+
+// --- 4b. VIDEO ELEMENTİ TAKİBİ (MutationObserver) ---
+// YouTube bir SPA (Single Page Application) olduğundan video elementi
+// sayfa yenilenmeden değişebilir. Önceki yaklaşım setInterval ile her saniye
+// DOM'u tarıyordu — bu gereksiz CPU tüketir.
+// MutationObserver yalnızca DOM değiştiğinde tetiklenir: daha verimli ve hızlı.
+const videoObserver = new MutationObserver(() => {
+    if (!state.socket) return;
+
     const v = document.querySelector('video');
-    if (v && v !== video) {
-        video = v;
-        attachEvents(video);
+    if (v && v !== state.video) {
+        state.video = v;
+        attachEvents(v);
         applyPendingSync();
     }
-}
+});
 
-function attachEvents(v) {
-    v.onplay = () => { if (!isRemoteAction && socket) socket.emit('videoAction', { type: 'PLAY', roomId }); };
-    v.onpause = () => { if (!isRemoteAction && socket) socket.emit('videoAction', { type: 'PAUSE', roomId }); };
-    v.onseeking = () => { if (!isRemoteAction && socket) socket.emit('videoAction', { type: 'SEEK', time: v.currentTime, roomId }); };
-}
-
-setInterval(checkPageStatus, 1000);
-
-// --- 5. YOUTUBE NAVİGASYON VE POPUP SİNYALLERİ ---
+// body'nin tüm alt ağacını izle; YouTube lazy-load ile video ekleyebilir.
+videoObserver.observe(document.body, { childList: true, subtree: true });
 
 window.addEventListener('yt-navigate-finish', () => {
     const isRemoteNav = sessionStorage.getItem('isRemoteNavigating');
