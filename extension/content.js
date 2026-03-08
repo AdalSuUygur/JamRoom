@@ -298,39 +298,54 @@ window.addEventListener('yt-navigate-finish', () => {
     const isRemoteNav = sessionStorage.getItem('isRemoteNavigating');
     if (isRemoteNav === 'true') {
         sessionStorage.removeItem('isRemoteNavigating');
-        return; 
+        return;
     }
-    if (!socket || isRemoteAction) return;
-    
-    const currentUrl = location.href;
-    if (currentUrl.includes("watch?v=")) {
-        const pureUrl = cleanYouTubeUrl(currentUrl); 
-        if (currentUrl !== pureUrl) window.history.replaceState({}, '', pureUrl);
 
-        socket.emit('videoAction', { type: 'URL_CHANGE', newUrl: pureUrl, roomId: roomId, time: 0, state: true });
-        isRemoteAction = true;
-        setTimeout(() => { isRemoteAction = false; }, 1000);
-    }
+    if (!state.socket || state.isRemoteAction) return;
+
+    const currentUrl = location.href;
+    if (!currentUrl.includes("watch?v=")) return;
+
+    const pureUrl = cleanYouTubeUrl(currentUrl);
+
+    // Playlist parametrelerini URL'den temizle; herkes aynı URL'i görsün.
+    if (currentUrl !== pureUrl) window.history.replaceState({}, '', pureUrl);
+
+    // withRemoteAction: URL_CHANGE emit'inden hemen sonra gelen
+    // kendi play/seek event'lerimizin sunucuya gitmesini engeller.
+    withRemoteAction(() => {
+        state.socket.emit('videoAction', {
+            type: 'URL_CHANGE',
+            newUrl: pureUrl,
+            roomId: state.roomId,
+            time: 0,
+            state: true,
+        });
+    });
 });
 
+// Popup'tan gelen JOIN / LEAVE komutlarını dinler.
 chrome.runtime.onMessage.addListener((message) => {
     if (message.type === "JOIN_NEW_ROOM") {
         sessionStorage.setItem('jamActive', 'true');
         connect(message.roomId);
         chrome.runtime.sendMessage({ type: "ROOM_JOINED", roomId: message.roomId });
+
     } else if (message.type === "LEAVE_ROOM") {
-        if (socket) {
-            socket.emit('leaveRoom', roomId);
-            socket.disconnect();
-            socket = null;
-            roomId = null;
+        if (state.socket) {
+            state.socket.emit('leaveRoom', state.roomId);
+            state.socket.disconnect();
+            state.socket = null;
+            state.roomId = null;
         }
         sessionStorage.removeItem('jamActive');
+        // Badge'i temizle; background.js bu mesajı dinler.
         chrome.runtime.sendMessage({ type: "SET_BADGE", text: "" });
     }
 });
 
-// Sayfa yenilendiğinde otomatik geri bağlanma
+// Sayfa yenilendiğinde (F5) oturumu otomatik olarak kurtar.
+// jamActive flag'i ve savedRoomId storage'da varsa yeniden bağlan.
 if (sessionStorage.getItem('jamActive') === 'true') {
     chrome.storage.local.get(['savedRoomId'], (res) => {
         if (res.savedRoomId) connect(res.savedRoomId);
