@@ -4,6 +4,29 @@ let isRemoteAction = false;
 let video = null; 
 let currentUrl = location.href;
 
+// --- 0. VISIBILITY BYPASS (YouTube'un sekmeyi takip etmesini engeller) ---
+
+function bypassVisibility() {
+    // 1. Özellikleri Maskele: YouTube 'Gizli miyim?' diye sorduğunda 'Hayır' diyoruz.
+    Object.defineProperty(document, 'hidden', { value: false, writable: false });
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', writable: false });
+    Object.defineProperty(document, 'webkitHidden', { value: false, writable: false });
+
+    // 2. Olayları Yakala ve Durdur: 'Sekme değişti' sinyalini YouTube'a ulaştırmıyoruz.
+    const blockEvent = (e) => {
+        // Sadece görünürlükle ilgili olayları durduruyoruz
+        if (e.type === 'visibilitychange' || e.type === 'webkitvisibilitychange') {
+            e.stopImmediatePropagation();
+        }
+    };
+
+    // 'True' parametresi ile olayı yakalama (capture) fazında en tepede durduruyoruz.
+    document.addEventListener('visibilitychange', blockEvent, true);
+    document.addEventListener('webkitvisibilitychange', blockEvent, true);
+    
+    console.log("🛡️ JamRoom: Visibility protection active.");
+}
+
 // 1. BAĞLANTI FONKSİYONU
 function connect(id) {
     if (socket) socket.disconnect(); 
@@ -15,6 +38,8 @@ function connect(id) {
     socket.on('connect', () => {
         console.log("✅ Connected to server. Room:", roomId);
         socket.emit('joinRoom', roomId);
+        bypassVisibility();
+
     });
     // Sunucudan gelen kişi sayısını Chrome hafızasına yaz
     socket.on('userCountUpdate', (count) => {
