@@ -14,13 +14,12 @@ const state = {
 };
 
 // --- 0. KULLANICI ADI TOPLAMA ---
-// YouTube'un header alanındaki hesap adını DOM'dan okur.
-// Kullanıcı giriş yapmamışsa veya DOM henüz hazır değilse null döner;
-// server bu durumda otomatik "Guest N" atar.
+// window.yt.config_.USER_ACCOUNT_NAME YouTube'un her sayfada set ettiği
+// güvenilir bir global değişken — menü açık olmasa bile mevcut.
+// DOM selector'larının aksine sayfa yapısı değişse de bu key stabil kalır.
+// Bulunamazsa null döner; server "Guest N" atar.
 function getYouTubeUsername() {
-    const el = document.querySelector('#account-name, yt-formatted-string#account-name');
-    const name = el?.textContent?.trim();
-    return name || null;
+    return window.yt?.config_?.USER_ACCOUNT_NAME || null;
 }
 
 // --- 0b. REMOTE ACTION WRAPPER ---
