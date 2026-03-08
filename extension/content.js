@@ -3,10 +3,12 @@
  * Mimari: Master Controller (Merkezi Kontrolcü) Yapısı
  */
 
-let roomId = null; 
-let socket = null;
-let isRemoteAction = false; 
-let video = null; 
+const state = {
+  roomId: null,
+  socket: null,
+  isRemoteAction: false,
+  video: null,
+};
 
 // --- 0. VISIBILITY BYPASS (Arka Plan Koruması) ---
 // YouTube'un sekme değiştirildiğinde veya video sessizdeyken (muted) 
