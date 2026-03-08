@@ -1,13 +1,16 @@
 /**
- * JAMROOM CONTENT SCRIPT - Version 1.3
+ * JAMROOM CONTENT SCRIPT - Version 1.4
  * Mimari: Master Controller (Merkezi Kontrolcü) Yapısı
+ *
+ * Tüm değişken durumlar tek bir `state` nesnesinde toplanmıştır.
+ * Böylece hangi değerin nerede değiştiği izlenebilir,
+ * global scope kirlenmez ve ileride kolayca genişletilebilir.
  */
-
 const state = {
-  roomId: null,
-  socket: null,
-  isRemoteAction: false,
-  video: null,
+    roomId: null,       // Aktif oda adı
+    socket: null,       // Socket.IO bağlantısı
+    isRemoteAction: false, // Sunucudan gelen komutların kendi event'lerimizi tetiklemesini önler
+    video: null,        // Sayfadaki aktif <video> elementi
 };
 
 // --- 0. VISIBILITY BYPASS (Arka Plan Koruması) ---
