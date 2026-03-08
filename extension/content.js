@@ -84,15 +84,16 @@ function handleServerAction(data) {
     console.log("📥 Server action:", data.type);
 
     if (data.type === 'URL_CHANGE' || data.type === 'SYNC') {
-        const incomingVideoId = getVideoId(data.newUrl);
         const currentVideoId = getVideoId(location.href);
+        const incomingVideoId = getVideoId(data.newUrl);
 
+        // Sadece Video ID'lerini karşılaştırıyoruz
         if (currentVideoId !== incomingVideoId) {
-            // Işınlanma bilgilerini sessionStorage'a (tarayıcı hafızası) kaydediyoruz
-            sessionStorage.setItem('pendingSyncTime', data.time || 0);
-            sessionStorage.setItem('pendingSyncState', (data.state !== undefined) ? data.state : true);
+            if (data.type === 'SYNC') {
+                sessionStorage.setItem('pendingSyncTime', data.time);
+                sessionStorage.setItem('pendingSyncState', data.state);
+            }
             sessionStorage.setItem('isRemoteNavigating', 'true');
-            
             window.location.href = data.newUrl;
             return; 
         }
@@ -143,6 +144,7 @@ setInterval(checkPageStatus, 1000);
 
 // --- YOUTUBE SENSÖRÜ ---
 window.addEventListener('yt-navigate-finish', () => {
+    // 1. Eğer bu geçişi zaten sunucudan gelen bir komutla yaptıysak, geri bildirim (echo) oluşmasın diye duruyoruz.
     const isRemoteNav = sessionStorage.getItem('isRemoteNavigating');
     if (isRemoteNav === 'true') {
         sessionStorage.removeItem('isRemoteNavigating');
@@ -150,7 +152,7 @@ window.addEventListener('yt-navigate-finish', () => {
         return; // Fonksiyonu burada durduruyoruz, sunucuya mesaj atmıyoruz.
     }
 
-    if (!socket || isRemoteAction) return;
+    if (!socket || isRemoteAction) return; // Bağlantı yoksa bir şey yapma
     
     const currentUrl = location.href;
     
@@ -165,10 +167,17 @@ window.addEventListener('yt-navigate-finish', () => {
         }
 
         console.log("🔗 Sending cleaned URL to the room:", pureUrl);
-        socket.emit('videoAction', { type: 'URL_CHANGE', newUrl: pureUrl, roomId });
+        socket.emit('videoAction', { 
+            type: 'URL_CHANGE', 
+            newUrl: pureUrl, 
+            roomId: roomId,
+            time: 0,
+            state: true
+        });
         
+        // Kısa süreliğine kendi hareketlerimizi kilitleyelim ki sonsuz döngü olmasın
         isRemoteAction = true;
-        setTimeout(() => { isRemoteAction = false; }, 900);
+        setTimeout(() => { isRemoteAction = false; }, 1000);
     }
 });
 // ------------------------------------------
