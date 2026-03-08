@@ -36,17 +36,41 @@ function bypassVisibility() {
     Object.defineProperty(document, 'visibilityState', { value: 'visible', writable: false });
     Object.defineProperty(document, 'webkitHidden', { value: false, writable: false });
 
-    // 2. Olayları Yakala ve Durdur: 'Sekme değişti' sinyalini YouTube'a ulaştırmıyoruz.
+    // 2. Olayları Yakala, JamRoom işini yap, sonra YouTube'a ulaştırma.
+    // blockEvent hem YouTube'u engeller hem de muted video watcher'ını çalıştırır.
+    // İki ayrı listener eklesek stopImmediatePropagation ikincisini de keserdi;
+    // bu yüzden her iki iş tek handler içinde yapılıyor.
     const blockEvent = (e) => {
-        // Sadece görünürlükle ilgili olayları durduruyoruz
-        if (e.type === 'visibilitychange' || e.type === 'webkitvisibilitychange') {
-            e.stopImmediatePropagation();
+        if (e.type !== 'visibilitychange' && e.type !== 'webkitvisibilitychange') return;
+
+        // Muted Video Watcher:
+        // Chrome bazı durumlarda visibilitychange event'ini göndermeden
+        // muted videoyu doğrudan pause eder (Media Session / IntersectionObserver yolu).
+        // Ek olarak visibilitychange üzerinden de pause gelebilir.
+        // Her iki durumu da yakalamak için burada ve onpause'da filtre uyguluyoruz.
+        // - onpause: odaya yanlış PAUSE sinyali gitmesini önler.
+        // - Buradaki watcher: videonun kendisinin akmasını sürdürür.
+        const v = state.video;
+        if (v && v.muted && state.socket) {
+            // Chrome'un pause işlemini tamamlaması için 300ms bekliyoruz,
+            // sonra video hâlâ duruyorsa sessizce yeniden başlatıyoruz.
+            setTimeout(() => {
+                if (v.paused && v.muted) {
+                    v.play().catch(() => {
+                        // Arka planda autoplay izni yoksa sessizce geç;
+                        // heartbeat zaten zamanı senkronize edecek.
+                    });
+                }
+            }, 300);
         }
+
+        // YouTube'un bu event'i almasını engelle.
+        e.stopImmediatePropagation();
     };
 
     document.addEventListener('visibilitychange', blockEvent, true);
     document.addEventListener('webkitvisibilitychange', blockEvent, true);
-    
+
     console.log("🛡️ JamRoom: Visibility protection active.");
 }
 
@@ -270,9 +294,30 @@ function detachEvents(v) {
 function attachEvents(v) {
     detachEvents(state.video); // Önce eskisini temizle
 
-    v.onplay    = () => { if (!state.isRemoteAction && state.socket) state.socket.emit('videoAction', { type: 'PLAY',  roomId: state.roomId }); };
-    v.onpause   = () => { if (!state.isRemoteAction && state.socket) state.socket.emit('videoAction', { type: 'PAUSE', roomId: state.roomId }); };
-    v.onseeking = () => { if (!state.isRemoteAction && state.socket) state.socket.emit('videoAction', { type: 'SEEK',  time: v.currentTime, roomId: state.roomId }); };
+    v.onplay = () => {
+        if (!state.isRemoteAction && state.socket) {
+            state.socket.emit('videoAction', { type: 'PLAY', roomId: state.roomId });
+        }
+    };
+
+    v.onpause = () => {
+        // MUTED PAUSE FILTER:
+        // Chrome, muted bir videoyu arka plana alındığında otomatik pause eder.
+        // Bu pause kullanıcıdan gelmiyor; browser policy'den geliyor.
+        // Eğer video muted ise bu pause'u odaya bildirme — diğer kullanıcıların
+        // videosu yanlışlıkla durmasın.
+        if (v.muted) return;
+
+        if (!state.isRemoteAction && state.socket) {
+            state.socket.emit('videoAction', { type: 'PAUSE', roomId: state.roomId });
+        }
+    };
+
+    v.onseeking = () => {
+        if (!state.isRemoteAction && state.socket) {
+            state.socket.emit('videoAction', { type: 'SEEK', time: v.currentTime, roomId: state.roomId });
+        }
+    };
 }
 
 // --- 4b. VIDEO ELEMENTİ TAKİBİ (MutationObserver) ---
