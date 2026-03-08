@@ -9,7 +9,7 @@ function connect(id) {
     if (socket) socket.disconnect(); 
     
     // Artık config dosyasından çekiyoruz:
-    socket = io(CONFIG.API_URL); 
+    socket = io(CONFIG.SERVER_URL); 
     roomId = id;
 
     socket.on('connect', () => {
