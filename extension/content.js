@@ -13,7 +13,21 @@ const state = {
     video: null,        // Sayfadaki aktif <video> elementi
 };
 
-// --- 0. VISIBILITY BYPASS (Arka Plan Koruması) ---
+// --- 0. REMOTE ACTION WRAPPER ---
+// isRemoteAction flag'ini yöneten tek merkezi fonksiyon.
+// Daha önce bu pattern 4 farklı yerde tekrarlanıyordu (DRY ihlali).
+// handleServerAction'da ise false'a hiç dönülmüyordu — bu bir bug'dı.
+// Tüm "uzaktan tetiklenen" işlemler bu wrapper üzerinden geçer.
+function withRemoteAction(fn, delay = 1000) {
+    state.isRemoteAction = true;
+    fn();
+    // Gecikme sonunda kilidi kaldır; bu sayede kullanıcı girişleri
+    // tekrar işlenmeye başlar. Sabit 1sn çoğu durumda yeterlidir,
+    // yavaş bağlantılar için caller delay'i artırabilir.
+    setTimeout(() => { state.isRemoteAction = false; }, delay);
+}
+
+// --- 0b. VISIBILITY BYPASS (Arka Plan Koruması) ---
 // YouTube'un sekme değiştirildiğinde veya video sessizdeyken (muted) 
 // videoyu durdurmasını engellemek için tarayıcıyı "görünür" olduğuna ikna eder.
 function bypassVisibility() {
@@ -39,35 +53,39 @@ function bypassVisibility() {
 // --- 1. MASTER CONTROLLER (Merkezi Video Kontrolcüsü) ---
 // Videoya dışarıdan (sunucudan) gelen her türlü müdahale (Play, Pause, Seek, Sync)
 // tek bir merkezden geçer. Bu, kod tekrarını ve çakışmaları (overlap) önler.
+// isRemoteAction yönetimi artık withRemoteAction wrapper'ına devredildi.
 function applyVideoAction(data) {
-    if (!video) return;
+    if (!state.video) return;
 
-    // Kendi yaptığımız işlemi sunucuya geri bildirmemek için kilidi açıyoruz.
-    isRemoteAction = true;
     console.log(`🎬 Master Controller: ${data.type} uygulanıyor...`, data);
 
-    // A. Zaman Güncelleme (Drift Correction)
-    // Eğer gelen zaman ile bizim videomuz arasındaki fark 1.5 saniyeden büyükse eşitle.
-    if (data.time !== undefined) {
-        const threshold = 1.5; 
-        if (Math.abs(video.currentTime - data.time) > threshold) {
-            video.currentTime = data.time;
-        }
-    }
+    // withRemoteAction: kilidi açar, işlemi çalıştırır, 1sn sonra kapatır.
+    withRemoteAction(() => {
 
-    // B. Oynatma/Durdurma Durumu (Muted & Background Fix)
-    // Lider oynatıyorsa ve biz durmuşsak (veya tam tersi) durumu zorla eşitle.
-    if (data.paused !== undefined) {
-        if (data.paused && !video.paused) {
-            video.pause();
-        } else if (!data.paused && video.paused) {
-            // Arka plandaki videoları uyandırmak için play() komutunu hata yakalayarak çalıştır.
-            video.play().catch(e => console.warn("⚠️ Oynatma uyandırılamadı (User Interaction gerekli olabilir):", e));
+        // A. Zaman Güncelleme (Drift Correction)
+        // Eğer gelen zaman ile bizim videomuz arasındaki fark 1.5 saniyeden büyükse eşitle.
+        if (data.time !== undefined) {
+            const threshold = 1.5;
+            if (Math.abs(state.video.currentTime - data.time) > threshold) {
+                state.video.currentTime = data.time;
+            }
         }
-    }
 
-    // İşlem tamamlandıktan 1 saniye sonra kilidi kapatarak manuel hareketlere izin ver.
-    setTimeout(() => { isRemoteAction = false; }, 1000);
+        // B. Oynatma/Durdurma Durumu (Muted & Background Fix)
+        // Lider oynatıyorsa ve biz durmuşsak (veya tam tersi) durumu zorla eşitle.
+        if (data.paused !== undefined) {
+            if (data.paused && !state.video.paused) {
+                state.video.pause();
+            } else if (!data.paused && state.video.paused) {
+                // Arka plandaki videoları uyandırmak için play() komutunu
+                // hata yakalayarak çalıştır (tarayıcı izni gerekmeyebilir).
+                state.video.play().catch(e =>
+                    console.warn("⚠️ Oynatma uyandırılamadı:", e)
+                );
+            }
+        }
+
+    });
 }
 
 // --- 2. URL VE YÖNLENDİRME MERKEZİ ---
