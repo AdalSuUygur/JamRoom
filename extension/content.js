@@ -84,16 +84,15 @@ function handleServerAction(data) {
     console.log("📥 Server action:", data.type);
 
     if (data.type === 'URL_CHANGE' || data.type === 'SYNC') {
-        const currentVideoId = getVideoId(location.href);
         const incomingVideoId = getVideoId(data.newUrl);
+        const currentVideoId = getVideoId(location.href);
 
-        // Sadece Video ID'lerini karşılaştırıyoruz
         if (currentVideoId !== incomingVideoId) {
-            if (data.type === 'SYNC') {
-                sessionStorage.setItem('pendingSyncTime', data.time);
-                sessionStorage.setItem('pendingSyncState', data.state);
-            }
+            // Işınlanma bilgilerini sessionStorage'a (tarayıcı hafızası) kaydediyoruz
+            sessionStorage.setItem('pendingSyncTime', data.time || 0);
+            sessionStorage.setItem('pendingSyncState', (data.state !== undefined) ? data.state : true);
             sessionStorage.setItem('isRemoteNavigating', 'true');
+            
             window.location.href = data.newUrl;
             return; 
         }
