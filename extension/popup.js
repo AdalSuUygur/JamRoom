@@ -63,14 +63,26 @@ document.getElementById('joinBtn').addEventListener('click', () => {
 // -------------------------------------------
 document.getElementById('leaveBtn').addEventListener('click', () => {
 
-  // Content script'e odadan çık komutu gönder
-  sendMessageToContent("LEAVE_ROOM", null);
+  // joinBtn gibi aktif sekmenin YouTube olup olmadığını kontrol et.
+  // Yanlış sekmeden tıklanırsa sendMessage sessizce başarısız olur;
+  // kullanıcıyı önceden bilgilendirmek daha iyi UX sağlar.
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    const currentTab = tabs[0];
 
-  // Local storage'dan kayıtlı oda ve kullanıcı sayısını temizle
-  chrome.storage.local.remove(['savedRoomId', 'roomUserCount']);
+    if (!currentTab || !currentTab.url || !currentTab.url.includes("youtube.com")) {
+      setStatus("Open a YouTube tab to leave the room.");
+      return;
+    }
 
-  // UI durumunu sıfırla
-  setStatus("Not in an active room.");
+    // Content script'e odadan çık komutu gönder
+    sendMessageToContent("LEAVE_ROOM", null);
+
+    // Local storage'dan kayıtlı oda ve kullanıcı sayısını temizle
+    chrome.storage.local.remove(['savedRoomId', 'roomUserCount']);
+
+    // UI durumunu sıfırla
+    setStatus("Not in an active room.");
+  });
 });
 
 
