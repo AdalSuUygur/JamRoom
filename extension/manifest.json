@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "JamRoom",
+  "version": "1.2.0",
+  "description": "Real-time playback sync for YouTube rooms (play/pause/seek).",
+  "homepage_url": "https://github.com/AdalSuUygur/JamRoom",
+  "minimum_chrome_version": "114",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "permissions": ["activeTab", "storage"],
+  "host_permissions": ["https://www.youtube.com/*"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": "icons/icon48.png",
+    "default_title": "JamRoom"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.youtube.com/*"],
+      "js": ["socket.io.min.js", "config.js", "content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
