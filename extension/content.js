@@ -13,7 +13,17 @@ const state = {
     video: null,        // Sayfadaki aktif <video> elementi
 };
 
-// --- 0. REMOTE ACTION WRAPPER ---
+// --- 0. KULLANICI ADI TOPLAMA ---
+// YouTube'un header alanındaki hesap adını DOM'dan okur.
+// Kullanıcı giriş yapmamışsa veya DOM henüz hazır değilse null döner;
+// server bu durumda otomatik "Guest N" atar.
+function getYouTubeUsername() {
+    const el = document.querySelector('#account-name, yt-formatted-string#account-name');
+    const name = el?.textContent?.trim();
+    return name || null;
+}
+
+// --- 0b. REMOTE ACTION WRAPPER ---
 // isRemoteAction flag'ini yöneten tek merkezi fonksiyon.
 // Daha önce bu pattern 4 farklı yerde tekrarlanıyordu (DRY ihlali).
 // handleServerAction'da ise false'a hiç dönülmüyordu — bu bir bug'dı.
@@ -188,7 +198,12 @@ function connect(id) {
 
     state.socket.on('connect', () => {
         console.log("✅ Connected to server. Room:", state.roomId);
-        state.socket.emit('joinRoom', state.roomId);
+        // joinRoom artık { roomId, nickname } objesi gönderiyor.
+        // nickname null gelirse server "Guest N" atar.
+        state.socket.emit('joinRoom', {
+            roomId: state.roomId,
+            nickname: getYouTubeUsername(),
+        });
         bypassVisibility();
     });
 
@@ -226,6 +241,12 @@ function connect(id) {
     // D. Kullanıcı sayısı güncellemesini storage'a yaz; popup buradan okur.
     state.socket.on('userCountUpdate', (count) => {
         chrome.storage.local.set({ roomUserCount: count });
+    });
+
+    // D2. Kullanıcı listesi güncellemesini storage'a yaz.
+    // Server her join/leave/disconnect'te güncel nickname dizisini yayınlar.
+    state.socket.on('userListUpdate', (list) => {
+        chrome.storage.local.set({ roomUserList: list });
     });
 
     // E. Odaya yeni biri girince lider güncel state'i gönderir.

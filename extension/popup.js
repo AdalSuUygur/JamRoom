@@ -127,19 +127,19 @@ chrome.runtime.onMessage.addListener((msg) => {
 
   if (msg.type === "ROOM_JOINED") {
 
-    // Input alanını güncel oda adıyla senkronize et
     if (msg.roomId) {
       roomInput.value = msg.roomId;
     }
 
-    // Kullanıcıya kısa süreli başarı mesajı göster
     setStatus(`Joined: ${msg.roomId}`);
 
-    // 1.2 saniye sonra kullanıcı sayısını göster
+    // 1.2 saniye sonra kullanıcı sayısını ve üye listesini göster.
+    // Gecikme: server'ın userListUpdate göndermesi için yeterli tampon.
     setTimeout(() => {
-      chrome.storage.local.get(['roomUserCount'], (res) => {
+      chrome.storage.local.get(['roomUserCount', 'roomUserList'], (res) => {
         const count = res.roomUserCount || 1;
         setStatus(`In room: ${count} users`);
+        renderMemberList(res.roomUserList || []);
       });
     }, 1200);
   }
@@ -149,21 +149,36 @@ chrome.runtime.onMessage.addListener((msg) => {
 // -------------------------------------------
 // Popup açıldığında önceki oda bilgisini geri yükleme
 // -------------------------------------------
-chrome.storage.local.get(['savedRoomId', 'roomUserCount'], (result) => {
+chrome.storage.local.get(['savedRoomId', 'roomUserCount', 'roomUserList'], (result) => {
 
   if (result.savedRoomId) {
-
-    // Eğer daha önce bir odaya girilmişse input'u doldur
     roomInput.value = result.savedRoomId;
-
-    // Kullanıcı sayısını göster (yoksa 1 varsay)
     const count = result.roomUserCount || 1;
     setStatus(`In room: ${count} users`);
-
+    renderMemberList(result.roomUserList || []);
   } else {
-
-    // Eğer kayıtlı oda yoksa temiz başlangıç yap
     roomInput.value = "";
     setStatus("Not in an active room.");
+    renderMemberList([]);
   }
 });
+
+
+// -------------------------------------------
+// Üye Listesi Render Fonksiyonu
+// Server'dan gelen nickname dizisini popup'ta listeler.
+// Liste boşsa #memberList alanını temizler.
+// -------------------------------------------
+function renderMemberList(list) {
+  const container = document.getElementById('memberList');
+  if (!container) return;
+
+  if (!list || list.length === 0) {
+    container.innerHTML = '';
+    return;
+  }
+
+  container.innerHTML = list
+    .map(name => `<div class="member-item">👤 ${name}</div>`)
+    .join('');
+}
