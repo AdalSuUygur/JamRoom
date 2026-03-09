@@ -14,10 +14,9 @@ const state = {
 };
 
 // --- 0. KULLANICI ADI TOPLAMA ---
-// Content script Chrome'un "isolated world" mekanizması nedeniyle sayfanın
-// window objesine (window.yt vb.) erişemez — doğrudan okuma çalışmaz.
-// Çözüm: DOM'a küçük bir script inject ederiz; sayfa context'inde çalışır,
-// window.yt'yi okur ve postMessage ile bize iletir.
+// username-reader.js MAIN world'de çalışarak window.yt'yi okur ve
+// postMessage ile buraya iletir. Bu script sadece mesajı yakalar.
+// 2sn içinde mesaj gelmezse null ile devam eder — server "Guest N" atar.
 const usernamePromise = new Promise((resolve) => {
     function onMessage(event) {
         if (event.source !== window) return;
@@ -26,18 +25,6 @@ const usernamePromise = new Promise((resolve) => {
         resolve(event.data.username || null);
     }
     window.addEventListener('message', onMessage);
-
-    const script = document.createElement('script');
-    script.textContent = `
-        window.postMessage({
-            type: 'JAMROOM_USERNAME',
-            username: window.yt?.config_?.USER_ACCOUNT_NAME || null
-        }, '*');
-    `;
-    document.documentElement.appendChild(script);
-    script.remove();
-
-    // Sayfa henüz hazır değilse 2sn sonra null ile devam et.
     setTimeout(() => resolve(null), 2000);
 });
 
@@ -211,9 +198,8 @@ async function connect(id) {
     // Varsa eski bağlantıyı temiz kapat; çift bağlantı olmasın.
     if (state.socket) state.socket.disconnect();
 
-    // Sayfa inject script'inin username'i postMessage ile iletmesini bekle.
-    // usernamePromise zaten sayfa yüklenince resolve olur; burada sadece sonucu alırız.
-    // null gelirse server "Guest N" atar.
+    // username-reader.js (MAIN world) window.yt'yi okuyup postMessage ile iletir.
+    // Burada sadece o mesajı bekliyoruz. null gelirse server "Guest N" atar.
     const nickname = await usernamePromise;
     console.log("👤 JamRoom username:", nickname);
 
@@ -222,10 +208,7 @@ async function connect(id) {
 
     state.socket.on('connect', () => {
         console.log("✅ Connected to server. Room:", state.roomId);
-        state.socket.emit('joinRoom', {
-            roomId: state.roomId,
-            nickname,
-        });
+        state.socket.emit('joinRoom', { roomId: state.roomId, nickname });
         bypassVisibility();
     });
 
