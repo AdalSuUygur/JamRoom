@@ -1,3 +1,3 @@
 const CONFIG = {
-    SERVER_URL: "https://jamroom-server.onrender.com" 
+    API_URL: "https://jamroom-mznp.onrender.com" 
 };
