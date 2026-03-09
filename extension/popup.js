@@ -147,6 +147,27 @@ chrome.runtime.onMessage.addListener((msg) => {
 
 
 // -------------------------------------------
+// Gerçek Zamanlı Storage Dinleyicisi
+// Popup açık olduğunda server'dan gelen userListUpdate ve userCountUpdate
+// değişikliklerini anında yansıtır — popup'ı kapatıp açmaya gerek kalmaz.
+// -------------------------------------------
+chrome.storage.onChanged.addListener((changes) => {
+  if (changes.roomUserList) {
+    renderMemberList(changes.roomUserList.newValue || []);
+  }
+
+  if (changes.roomUserCount) {
+    const count = changes.roomUserCount.newValue || 0;
+    if (count === 0) {
+      setStatus("Not in an active room.");
+    } else {
+      setStatus(`In room: ${count} users`);
+    }
+  }
+});
+
+
+// -------------------------------------------
 // Popup açıldığında önceki oda bilgisini geri yükleme
 // -------------------------------------------
 chrome.storage.local.get(['savedRoomId', 'roomUserCount', 'roomUserList'], (result) => {
