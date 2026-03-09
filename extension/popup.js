@@ -44,9 +44,10 @@ document.getElementById('joinBtn').addEventListener('click', () => {
       return; // İşlemi durdur
     }
 
-    // Oda adını Chrome local storage'a kaydediyoruz
-    // Bu sayede popup kapanıp açılsa bile oda bilgisi hatırlanır
-    chrome.storage.local.set({ savedRoomId: roomId }, () => {
+    // Oda adı ve aktif tab ID'sini storage'a kaydediyoruz.
+    // activeTabId: background.js'in tab kapanma olayında hangi tab'ı
+    // izleyeceğini bilmesi için gerekli — tab kapanınca otomatik cleanup yapar.
+    chrome.storage.local.set({ savedRoomId: roomId, activeTabId: currentTab.id }, () => {
 
       // Content script'e JOIN komutu gönderiyoruz
       sendMessageToContent("JOIN_NEW_ROOM", roomId);
@@ -77,8 +78,8 @@ document.getElementById('leaveBtn').addEventListener('click', () => {
     // Content script'e odadan çık komutu gönder
     sendMessageToContent("LEAVE_ROOM", null);
 
-    // Local storage'dan kayıtlı oda ve kullanıcı sayısını temizle
-    chrome.storage.local.remove(['savedRoomId', 'roomUserCount']);
+    // Local storage'dan kayıtlı oda, aktif tab ve kullanıcı bilgilerini temizle
+    chrome.storage.local.remove(['savedRoomId', 'activeTabId', 'roomUserCount']);
 
     // UI durumunu sıfırla
     setStatus("Not in an active room.");
