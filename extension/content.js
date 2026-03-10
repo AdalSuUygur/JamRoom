@@ -1,22 +1,24 @@
 /**
  * JAMROOM CONTENT SCRIPT - Version 1.4
- * Mimari: Master Controller (Merkezi Kontrolcü) Yapısı
+ * Architecture: Master Controller Pattern
  *
- * Tüm değişken durumlar tek bir `state` nesnesinde toplanmıştır.
- * Böylece hangi değerin nerede değiştiği izlenebilir,
- * global scope kirlenmez ve ileride kolayca genişletilebilir.
+ * All mutable state lives in a single `state` object.
+ * This makes every mutation traceable, keeps the global
+ * scope clean, and makes the module easy to extend.
  */
 const state = {
-    roomId: null,       // Aktif oda adı
-    socket: null,       // Socket.IO bağlantısı
-    isRemoteAction: false, // Sunucudan gelen komutların kendi event'lerimizi tetiklemesini önler
-    video: null,        // Sayfadaki aktif <video> elementi
+    roomId: null,          // Active room name
+    socket: null,          // Socket.IO connection
+    isRemoteAction: false, // Prevents server-driven events from echoing back
+    video: null,           // Active <video> element on the page
 };
 
-// --- 0. KULLANICI ADI TOPLAMA ---
-// username-reader.js MAIN world'de çalışarak window.yt'yi okur ve
-// postMessage ile buraya iletir. Bu script sadece mesajı yakalar.
-// 2sn içinde mesaj gelmezse null ile devam eder — server "Guest N" atar.
+
+// --- 0. USERNAME COLLECTION ---
+// username-reader.js runs in the MAIN world and reads window.yt,
+// then relays the value here via postMessage.
+// If no message arrives within 2 s we proceed with null —
+// the server will assign "Guest N" automatically.
 const usernamePromise = new Promise((resolve) => {
     function onMessage(event) {
         if (event.source !== window) return;
@@ -28,98 +30,96 @@ const usernamePromise = new Promise((resolve) => {
     setTimeout(() => resolve(null), 2000);
 });
 
+
 // --- 0b. REMOTE ACTION WRAPPER ---
-// isRemoteAction flag'ini yöneten tek merkezi fonksiyon.
-// Daha önce bu pattern 4 farklı yerde tekrarlanıyordu (DRY ihlali).
-// handleServerAction'da ise false'a hiç dönülmüyordu — bu bir bug'dı.
-// Tüm "uzaktan tetiklenen" işlemler bu wrapper üzerinden geçer.
+// Single authoritative function that manages the isRemoteAction flag.
+// Previously this pattern was repeated in 4 places (DRY violation) and
+// handleServerAction never reset the flag to false — a latent bug.
+// Every server-driven mutation must go through this wrapper.
 function withRemoteAction(fn, delay = 1000) {
     state.isRemoteAction = true;
     fn();
-    // Gecikme sonunda kilidi kaldır; bu sayede kullanıcı girişleri
-    // tekrar işlenmeye başlar. Sabit 1sn çoğu durumda yeterlidir,
-    // yavaş bağlantılar için caller delay'i artırabilir.
+    // Release the lock after `delay` ms so user input is
+    // processed again. 1 s covers most network conditions;
+    // callers can pass a larger value for slow connections.
     setTimeout(() => { state.isRemoteAction = false; }, delay);
 }
 
-// --- 0b. VISIBILITY BYPASS (Arka Plan Koruması) ---
-// YouTube'un sekme değiştirildiğinde veya video sessizdeyken (muted) 
-// videoyu durdurmasını engellemek için tarayıcıyı "görünür" olduğuna ikna eder.
-function bypassVisibility() {
-    // 1. Özellikleri Maskele: YouTube 'Gizli miyim?' diye sorduğunda 'Hayır' diyoruz.
-    Object.defineProperty(document, 'hidden', { value: false, writable: false });
-    Object.defineProperty(document, 'visibilityState', { value: 'visible', writable: false });
-    Object.defineProperty(document, 'webkitHidden', { value: false, writable: false });
 
-    // 2. Olayları Yakala, JamRoom işini yap, sonra YouTube'a ulaştırma.
-    // blockEvent hem YouTube'u engeller hem de muted video watcher'ını çalıştırır.
-    // İki ayrı listener eklesek stopImmediatePropagation ikincisini de keserdi;
-    // bu yüzden her iki iş tek handler içinde yapılıyor.
+// --- 0c. VISIBILITY BYPASS (Background Tab Protection) ---
+// Tricks the browser into believing the tab is always visible so
+// YouTube does not pause a muted video when the tab loses focus.
+function bypassVisibility() {
+    // 1. Mask visibility properties so YouTube always sees "visible".
+    Object.defineProperty(document, 'hidden',          { value: false,     writable: false });
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', writable: false });
+    Object.defineProperty(document, 'webkitHidden',    { value: false,     writable: false });
+
+    // 2. Intercept visibility events before YouTube can react.
+    // Both concerns (blocking YouTube + muted-video watcher) are handled
+    // inside a single listener because stopImmediatePropagation would
+    // also block a second listener registered on the same phase.
     const blockEvent = (e) => {
         if (e.type !== 'visibilitychange' && e.type !== 'webkitvisibilitychange') return;
 
         // Muted Video Watcher:
-        // Chrome bazı durumlarda visibilitychange event'ini göndermeden
-        // muted videoyu doğrudan pause eder (Media Session / IntersectionObserver yolu).
-        // Ek olarak visibilitychange üzerinden de pause gelebilir.
-        // Her iki durumu da yakalamak için burada ve onpause'da filtre uyguluyoruz.
-        // - onpause: odaya yanlış PAUSE sinyali gitmesini önler.
-        // - Buradaki watcher: videonun kendisinin akmasını sürdürür.
+        // Chrome sometimes pauses a muted video directly (via Media Session /
+        // IntersectionObserver) without firing visibilitychange first.
+        // We handle both paths:
+        //   - onpause filter  → prevents a false PAUSE signal from reaching the room.
+        //   - This watcher   → keeps the local video playing.
         const v = state.video;
         if (v && v.muted && state.socket) {
-            // Chrome'un pause işlemini tamamlaması için 300ms bekliyoruz,
-            // sonra video hâlâ duruyorsa sessizce yeniden başlatıyoruz.
+            // Wait 300 ms for Chrome to complete its pause, then resume if needed.
             setTimeout(() => {
                 if (v.paused && v.muted) {
                     v.play().catch(() => {
-                        // Arka planda autoplay izni yoksa sessizce geç;
-                        // heartbeat zaten zamanı senkronize edecek.
+                        // Autoplay may be blocked in the background;
+                        // the next heartbeat will re-sync the timestamp.
                     });
                 }
             }, 300);
         }
 
-        // YouTube'un bu event'i almasını engelle.
         e.stopImmediatePropagation();
     };
 
-    document.addEventListener('visibilitychange', blockEvent, true);
+    document.addEventListener('visibilitychange',       blockEvent, true);
     document.addEventListener('webkitvisibilitychange', blockEvent, true);
 
-    console.log("🛡️ JamRoom: Visibility protection active.");
+    console.log('[JamRoom] Visibility protection active.');
 }
 
-// --- 1. MASTER CONTROLLER (Merkezi Video Kontrolcüsü) ---
-// Videoya dışarıdan (sunucudan) gelen her türlü müdahale (Play, Pause, Seek, Sync)
-// tek bir merkezden geçer. Bu, kod tekrarını ve çakışmaları (overlap) önler.
-// isRemoteAction yönetimi artık withRemoteAction wrapper'ına devredildi.
+
+// --- 1. MASTER CONTROLLER ---
+// Every server-driven video mutation (Play, Pause, Seek, Sync,
+// Heartbeat) flows through this single function.
+// Centralising here eliminates overlap and duplicated logic.
 function applyVideoAction(data) {
     if (!state.video) return;
 
-    console.log(`🎬 Master Controller: ${data.type} uygulanıyor...`, data);
+    console.log(`[JamRoom] Applying action: ${data.type}`, data);
 
-    // withRemoteAction: kilidi açar, işlemi çalıştırır, 1sn sonra kapatır.
     withRemoteAction(() => {
 
-        // A. Zaman Güncelleme (Drift Correction)
-        // Eğer gelen zaman ile bizim videomuz arasındaki fark 1.5 saniyeden büyükse eşitle.
+        // A. Drift Correction
+        // Seek only when the difference exceeds the threshold
+        // to avoid unnecessary interruptions for minor drift.
         if (data.time !== undefined) {
-            const threshold = 1.5;
-            if (Math.abs(state.video.currentTime - data.time) > threshold) {
+            const DRIFT_THRESHOLD_SEC = 1.5;
+            if (Math.abs(state.video.currentTime - data.time) > DRIFT_THRESHOLD_SEC) {
                 state.video.currentTime = data.time;
             }
         }
 
-        // B. Oynatma/Durdurma Durumu (Muted & Background Fix)
-        // Lider oynatıyorsa ve biz durmuşsak (veya tam tersi) durumu zorla eşitle.
+        // B. Play / Pause State (handles muted & background cases)
+        // Force-align our playback state with the leader's state.
         if (data.paused !== undefined) {
             if (data.paused && !state.video.paused) {
                 state.video.pause();
             } else if (!data.paused && state.video.paused) {
-                // Arka plandaki videoları uyandırmak için play() komutunu
-                // hata yakalayarak çalıştır (tarayıcı izni gerekmeyebilir).
-                state.video.play().catch(e =>
-                    console.warn("⚠️ Oynatma uyandırılamadı:", e)
+                state.video.play().catch((e) =>
+                    console.warn('[JamRoom] Could not resume playback:', e)
                 );
             }
         }
@@ -127,174 +127,174 @@ function applyVideoAction(data) {
     });
 }
 
-// --- 2. URL VE YÖNLENDİRME MERKEZİ ---
-// Oda içinde video (URL) değiştiğinde veya yeni bir odaya girişteki
-// ağır senkronizasyon işlemlerini yönetir.
+
+// --- 2. URL & NAVIGATION HANDLERS ---
+// Manages heavy sync operations when a video or room changes.
 //
-// Önceki yapıda isRemoteAction = true set ediliyordu ama false'a hiç
-// dönülmüyordu — bu kullanıcı girişlerini kalıcı olarak bloke eden bir bug'dı.
-// Şimdi her eylem tipi kendi handler'ına sahip, withRemoteAction üzerinden geçiyor.
+// Historical bug: the old implementation set isRemoteAction = true
+// but never reset it to false, permanently blocking user input.
+// Each action type now has its own handler called through
+// withRemoteAction, which guarantees the flag is released.
 
 function handleUrlChange(data) {
-    const currentVideoId = getVideoId(location.href);
+    const currentVideoId  = getVideoId(location.href);
     const incomingVideoId = getVideoId(data.newUrl);
 
-    // Farklı bir videoya geçiliyorsa sayfayı yönlendir.
-    // URL_CHANGE'de pending sync gerekmez; video en baştan açılır.
     if (currentVideoId !== incomingVideoId) {
+        // Different video → navigate. No pending sync needed;
+        // the video starts from the beginning on the new page.
         sessionStorage.setItem('isRemoteNavigating', 'true');
         window.location.href = data.newUrl;
         return;
     }
 
-    // Aynı video ise sadece play/pause durumunu güncelle.
+    // Same video → only update play/pause state.
     applyVideoAction({ type: data.type, time: data.time, paused: false });
 }
 
 function handleSync(data) {
-    const currentVideoId = getVideoId(location.href);
+    const currentVideoId  = getVideoId(location.href);
     const incomingVideoId = getVideoId(data.newUrl);
 
-    // Farklı video geliyorsa: sync bilgisini sessionStorage'a bırak,
-    // sayfa yüklenince applyPendingSync() bunları uygular.
     if (currentVideoId !== incomingVideoId) {
-        sessionStorage.setItem('pendingSyncTime', data.time);
-        sessionStorage.setItem('pendingSyncState', data.state);
+        // Different video → stash sync data before navigating.
+        // applyPendingSync() will apply it once the new page loads.
+        sessionStorage.setItem('pendingSyncTime',    data.time);
+        sessionStorage.setItem('pendingSyncState',   data.state);
         sessionStorage.setItem('isRemoteNavigating', 'true');
         window.location.href = data.newUrl;
         return;
     }
 
-    // Aynı video ise doğrudan uygula.
+    // Same video → apply immediately.
     applyVideoAction({
-        type: data.type,
-        time: data.time,
+        type:   data.type,
+        time:   data.time,
         paused: !data.state,
     });
 }
 
-// Her eylem tipini kendi handler'ına yönlendiren harita.
-// Yeni bir tip eklemek için sadece buraya bir satır eklenir.
+// Dispatch table: adding a new action type requires only one line here.
 const SERVER_ACTION_HANDLERS = {
     URL_CHANGE: handleUrlChange,
-    SYNC: handleSync,
+    SYNC:       handleSync,
 };
 
 function handleServerAction(data) {
     const handler = SERVER_ACTION_HANDLERS[data.type];
 
     if (handler) {
-        // withRemoteAction: isRemoteAction'ı güvenli şekilde açıp kapatır.
-        // Önceki bug: bu satır yoktu, flag hiç false'a dönmüyordu.
         withRemoteAction(() => handler(data));
     } else {
-        // Bilinmeyen tipleri master controller'a düşür.
+        // Unknown types fall through to the master controller.
         applyVideoAction(data);
     }
 }
 
-// --- 3. BAĞLANTI VE DİNLEYİCİLER (CONNECT) ---
+
+// --- 3. CONNECTION & EVENT LISTENERS ---
 async function connect(id) {
-    // Varsa eski bağlantıyı temiz kapat; çift bağlantı olmasın.
+    // Tear down any existing connection to prevent duplicates.
     if (state.socket) state.socket.disconnect();
 
-    // username-reader.js (MAIN world) window.yt'yi okuyup postMessage ile iletir.
-    // Burada sadece o mesajı bekliyoruz. null gelirse server "Guest N" atar.
+    // username-reader.js (MAIN world) reads window.yt and relays it here.
+    // null means unauthenticated; the server assigns "Guest N".
     const nickname = await usernamePromise;
-    console.log("👤 JamRoom username:", nickname);
+    console.log('[JamRoom] Connecting as:', nickname ?? 'Guest');
 
     state.socket = io(CONFIG.SERVER_URL);
     state.roomId = id;
 
     state.socket.on('connect', () => {
-        console.log("✅ Connected to server. Room:", state.roomId);
+        console.log('[JamRoom] Connected. Room:', state.roomId);
         state.socket.emit('joinRoom', { roomId: state.roomId, nickname });
         bypassVisibility();
     });
 
-    // A. Heartbeat Mekanizması: Sunucu lidere (odadaki ilk kişi) zaman sorar.
+    // A. Heartbeat request — server asks the leader for the current timestamp.
     state.socket.on('heartbeat_request', (data) => {
         if (state.video) {
             state.socket.emit('heartbeat_response', {
                 roomId: data.roomId,
-                time: state.video.currentTime,
+                time:   state.video.currentTime,
                 paused: state.video.paused,
             });
         }
     });
 
-    // B. Heartbeat Sync: Sunucudan gelen lider zamanını master controller'a ilet.
+    // B. Heartbeat sync — broadcast the leader's timestamp to all followers.
     state.socket.on('heartbeat_sync', (data) => {
         applyVideoAction({ type: 'HEARTBEAT_SYNC', time: data.time, paused: data.paused });
     });
 
-    // C. Manuel Eylemler: Diğer kullanıcıların Play/Pause/Seek/URL hareketleri.
-    // URL_CHANGE ve SYNC özel yönlendirme mantığı gerektirdiğinden handleServerAction'a,
-    // diğerleri doğrudan master controller'a gönderilir.
+    // C. Manual actions from other users (Play / Pause / Seek / URL change).
+    // URL_CHANGE and SYNC need navigation logic; everything else goes straight
+    // to the master controller.
     state.socket.on('videoActionFromServer', (data) => {
         if (data.type === 'URL_CHANGE' || data.type === 'SYNC') {
             handleServerAction(data);
         } else {
             applyVideoAction({
-                type: data.type,
-                time: data.time,
+                type:   data.type,
+                time:   data.time,
                 paused: (data.type === 'PAUSE'),
             });
         }
     });
 
-    // D. Kullanıcı sayısı güncellemesini storage'a yaz; popup buradan okur.
+    // D. User count update — written to storage; popup reads from there.
     state.socket.on('userCountUpdate', (count) => {
         chrome.storage.local.set({ roomUserCount: count });
     });
 
-    // D2. Kullanıcı listesi güncellemesini storage'a yaz.
-    // Server her join/leave/disconnect'te güncel nickname dizisini yayınlar.
+    // D2. Full nickname list — emitted on every join / leave / disconnect.
     state.socket.on('userListUpdate', (list) => {
         chrome.storage.local.set({ roomUserList: list });
     });
 
-    // E. Odaya yeni biri girince lider güncel state'i gönderir.
+    // E. New participant joined — leader sends current state to them.
     state.socket.on('getSyncData', (targetId) => {
         if (state.video) {
             state.socket.emit('sendSyncData', {
                 targetId,
                 action: {
-                    type: 'SYNC',
+                    type:   'SYNC',
                     newUrl: location.href,
-                    time: state.video.currentTime,
-                    state: !state.video.paused,
+                    time:   state.video.currentTime,
+                    state:  !state.video.paused,
                 },
             });
         }
     });
 }
 
-// --- 4. YARDIMCI VE TAKİP FONKSİYONLARI ---
 
-// Sayfa yönlendirmesi (handleSync) sırasında sessionStorage'a bırakılan
-// zaman ve oynatma durumunu yeni video yüklenince uygular.
+// --- 4. HELPERS & VIDEO TRACKING ---
+
+// Applies a stashed sync (time + play state) after a cross-video navigation.
+// handleSync writes to sessionStorage before the redirect;
+// this function reads and applies those values once the new page is ready.
 function applyPendingSync() {
-    const pendingTime = sessionStorage.getItem('pendingSyncTime');
+    const pendingTime  = sessionStorage.getItem('pendingSyncTime');
     const pendingState = sessionStorage.getItem('pendingSyncState');
 
     if (!pendingTime || !state.video) return;
 
     const apply = () => {
-        // withRemoteAction: sync sırasında kendi event'lerimizin sunucuya
-        // gitmesini engeller.
+        // withRemoteAction prevents our own seek/play events from
+        // echoing back to the room during the sync window.
         withRemoteAction(() => {
             state.video.currentTime = parseFloat(pendingTime);
             if (pendingState === 'true') state.video.play();
-            else state.video.pause();
+            else                         state.video.pause();
         });
 
         sessionStorage.removeItem('pendingSyncTime');
         sessionStorage.removeItem('pendingSyncState');
     };
 
-    // Video metadata henüz yüklenmediyse hazır olunca uygula,
-    // yüklendiyse (readyState >= 1) hemen uygula.
+    // Apply immediately if metadata is already loaded (readyState ≥ 1),
+    // otherwise wait for the loadedmetadata event.
     if (state.video.readyState >= 1) {
         apply();
     } else {
@@ -303,22 +303,23 @@ function applyPendingSync() {
 }
 
 function getVideoId(url) {
-    try { return new URL(url).searchParams.get("v"); } catch (e) { return null; }
+    try { return new URL(url).searchParams.get('v'); } catch { return null; }
 }
 
-// Eski video elementindeki event listener'ları temizler.
-// attachEvents her çağrıldığında önce bu çalışır; böylece memory leak önlenir.
+// Removes event listeners from the previous video element to prevent
+// memory leaks. Called at the top of attachEvents on every video switch.
 function detachEvents(v) {
     if (!v) return;
-    v.onplay = null;
-    v.onpause = null;
+    v.onplay    = null;
+    v.onpause   = null;
     v.onseeking = null;
 }
 
-// Yeni video elementine play/pause/seek dinleyicilerini bağlar.
-// Kullanıcı kaynaklı hareketleri sunucuya iletir; remote action sırasında sessiz kalır.
+// Attaches play / pause / seek listeners to a new video element.
+// User-originated events are forwarded to the server;
+// server-driven events are silenced via isRemoteAction.
 function attachEvents(v) {
-    detachEvents(state.video); // Önce eskisini temizle
+    detachEvents(state.video); // Clean up the previous element first.
 
     v.onplay = () => {
         if (!state.isRemoteAction && state.socket) {
@@ -328,10 +329,9 @@ function attachEvents(v) {
 
     v.onpause = () => {
         // MUTED PAUSE FILTER:
-        // Chrome, muted bir videoyu arka plana alındığında otomatik pause eder.
-        // Bu pause kullanıcıdan gelmiyor; browser policy'den geliyor.
-        // Eğer video muted ise bu pause'u odaya bildirme — diğer kullanıcıların
-        // videosu yanlışlıkla durmasın.
+        // Chrome auto-pauses muted videos when a tab is backgrounded.
+        // This pause originates from browser policy, not the user.
+        // Suppress it so other participants' playback is unaffected.
         if (v.muted) return;
 
         if (!state.isRemoteAction && state.socket) {
@@ -346,11 +346,12 @@ function attachEvents(v) {
     };
 }
 
-// --- 4b. VIDEO ELEMENTİ TAKİBİ (MutationObserver) ---
-// YouTube bir SPA (Single Page Application) olduğundan video elementi
-// sayfa yenilenmeden değişebilir. Önceki yaklaşım setInterval ile her saniye
-// DOM'u tarıyordu — bu gereksiz CPU tüketir.
-// MutationObserver yalnızca DOM değiştiğinde tetiklenir: daha verimli ve hızlı.
+
+// --- 4b. VIDEO ELEMENT TRACKING (MutationObserver) ---
+// YouTube is a SPA — the <video> element can be replaced without a full
+// page reload. A setInterval approach wastes CPU by scanning every second.
+// MutationObserver fires only on actual DOM changes: more efficient and
+// faster to respond.
 const videoObserver = new MutationObserver(() => {
     if (!state.socket) return;
 
@@ -362,12 +363,15 @@ const videoObserver = new MutationObserver(() => {
     }
 });
 
-// body'nin tüm alt ağacını izle; YouTube lazy-load ile video ekleyebilir.
+// Observe the full subtree; YouTube lazy-loads the video element.
 videoObserver.observe(document.body, { childList: true, subtree: true });
+
 
 window.addEventListener('yt-navigate-finish', () => {
     const isRemoteNav = sessionStorage.getItem('isRemoteNavigating');
     if (isRemoteNav === 'true') {
+        // This navigation was triggered by a remote URL_CHANGE or SYNC.
+        // Do not emit a new URL_CHANGE — it would create an infinite loop.
         sessionStorage.removeItem('isRemoteNavigating');
         return;
     }
@@ -375,34 +379,35 @@ window.addEventListener('yt-navigate-finish', () => {
     if (!state.socket || state.isRemoteAction) return;
 
     const currentUrl = location.href;
-    if (!currentUrl.includes("watch?v=")) return;
+    if (!currentUrl.includes('watch?v=')) return;
 
     const pureUrl = cleanYouTubeUrl(currentUrl);
 
-    // Playlist parametrelerini URL'den temizle; herkes aynı URL'i görsün.
+    // Strip playlist params so all participants share the same canonical URL.
     if (currentUrl !== pureUrl) window.history.replaceState({}, '', pureUrl);
 
-    // withRemoteAction: URL_CHANGE emit'inden hemen sonra gelen
-    // kendi play/seek event'lerimizin sunucuya gitmesini engeller.
+    // withRemoteAction: suppresses our own play/seek events that fire
+    // immediately after the URL_CHANGE emit.
     withRemoteAction(() => {
         state.socket.emit('videoAction', {
-            type: 'URL_CHANGE',
-            newUrl: pureUrl,
-            roomId: state.roomId,
-            time: 0,
-            state: true,
+            type:    'URL_CHANGE',
+            newUrl:  pureUrl,
+            roomId:  state.roomId,
+            time:    0,
+            state:   true,
         });
     });
 });
 
-// Popup'tan gelen JOIN / LEAVE komutlarını dinler.
+
+// Listens for JOIN / LEAVE commands sent from the popup.
 chrome.runtime.onMessage.addListener((message) => {
-    if (message.type === "JOIN_NEW_ROOM") {
+    if (message.type === 'JOIN_NEW_ROOM') {
         sessionStorage.setItem('jamActive', 'true');
         connect(message.roomId);
-        chrome.runtime.sendMessage({ type: "ROOM_JOINED", roomId: message.roomId });
+        chrome.runtime.sendMessage({ type: 'ROOM_JOINED', roomId: message.roomId });
 
-    } else if (message.type === "LEAVE_ROOM") {
+    } else if (message.type === 'LEAVE_ROOM') {
         if (state.socket) {
             state.socket.emit('leaveRoom', state.roomId);
             state.socket.disconnect();
@@ -410,23 +415,27 @@ chrome.runtime.onMessage.addListener((message) => {
             state.roomId = null;
         }
         sessionStorage.removeItem('jamActive');
-        // Badge'i temizle; background.js bu mesajı dinler.
-        chrome.runtime.sendMessage({ type: "SET_BADGE", text: "" });
+        // Ask background.js to clear the badge on this tab.
+        chrome.runtime.sendMessage({ type: 'SET_BADGE', text: '' });
     }
 });
 
-// Sayfa yenilendiğinde (F5) oturumu otomatik olarak kurtar.
-// jamActive flag'i ve savedRoomId storage'da varsa yeniden bağlan.
+
+// Session recovery on page reload (F5).
+// If jamActive is set and a savedRoomId exists, reconnect automatically.
 if (sessionStorage.getItem('jamActive') === 'true') {
     chrome.storage.local.get(['savedRoomId'], (res) => {
         if (res.savedRoomId) connect(res.savedRoomId);
     });
 }
 
+
+// Removes YouTube playlist parameters from a URL so all participants
+// reference the same canonical video URL regardless of how they arrived.
 function cleanYouTubeUrl(rawUrl) {
     try {
         const urlObj = new URL(rawUrl);
         ['list', 'index', 'start_radio'].forEach(p => urlObj.searchParams.delete(p));
         return urlObj.toString();
-    } catch (e) { return rawUrl; }
+    } catch { return rawUrl; }
 }

@@ -1,0 +1,78 @@
+{
+  "extensionName": {
+    "message": "JamRoom",
+    "description": "Extension name shown in Chrome Web Store and browser UI."
+  },
+  "extensionDescription": {
+    "message": "Real-time playback sync for YouTube rooms (play/pause/seek).",
+    "description": "Extension description shown in Chrome Web Store."
+  },
+
+  "popupTitle": {
+    "message": "JamRoom",
+    "description": "Heading displayed at the top of the popup."
+  },
+
+  "joinBtn": {
+    "message": "JOIN ROOM",
+    "description": "Label on the join button."
+  },
+
+  "leaveBtn": {
+    "message": "LEAVE ROOM",
+    "description": "Label on the leave button."
+  },
+
+  "statusDefault": {
+    "message": "Not in an active room.",
+    "description": "Shown when no room is active."
+  },
+
+  "statusJoining": {
+    "message": "Joining: $ROOM_ID$...",
+    "description": "Shown while joining a room.",
+    "placeholders": {
+      "room_id": {
+        "content": "$1",
+        "example": "room-1"
+      }
+    }
+  },
+
+  "statusJoined": {
+    "message": "Joined: $ROOM_ID$",
+    "description": "Shown after successfully joining a room.",
+    "placeholders": {
+      "room_id": {
+        "content": "$1",
+        "example": "room-1"
+      }
+    }
+  },
+
+  "statusInRoom": {
+    "message": "In room: $COUNT$ users",
+    "description": "Shows live user count in the current room.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+
+  "errorEnterRoomName": {
+    "message": "Please enter a room name.",
+    "description": "Validation error when the room name input is empty."
+  },
+
+  "errorOpenYouTubeJoin": {
+    "message": "Open a YouTube tab to use JamRoom.",
+    "description": "Error when the active tab is not YouTube and the user tries to join."
+  },
+
+  "errorOpenYouTubeLeave": {
+    "message": "Open a YouTube tab to leave the room.",
+    "description": "Error when the active tab is not YouTube and the user tries to leave."
+  }
+}
