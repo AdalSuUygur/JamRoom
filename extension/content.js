@@ -1,16 +1,41 @@
 /**
- * JAMROOM CONTENT SCRIPT - Version 1.4
+ * JAMROOM CONTENT SCRIPT - Version 1.5
  * Architecture: Master Controller Pattern
  *
  * All mutable state lives in a single `state` object.
  * This makes every mutation traceable, keeps the global
  * scope clean, and makes the module easy to extend.
+ *
+ * v1.5 — Auto-Reconnect & Socket Recovery (#5)
+ * ─────────────────────────────────────────────
+ * Problem : When the network drops briefly, Socket.IO
+ *           reconnects the transport layer but the app
+ *           never re-emits `joinRoom`, so the server
+ *           has no record of this client in any room.
+ *
+ * Fix     : Listen to Socket.IO's built-in `reconnect`
+ *           event and re-emit `joinRoom` with the saved
+ *           roomId. Badge and popup status are also
+ *           restored so the user always sees correct UI.
+ *
+ * Why `reconnect` instead of `connect`?
+ *   `connect` fires on EVERY successful connection,
+ *   including the very first one. We must not double-join
+ *   on the initial connection, so we use the dedicated
+ *   `reconnect` event which fires only after a recovery.
+ *
+ * Why `savedRoomId` from chrome.storage?
+ *   `state.roomId` lives in JS memory. If the content
+ *   script is torn down and recreated (e.g. extension
+ *   update, page restore), memory is gone. Storage is
+ *   the single source of truth that survives all of these.
  */
 const state = {
-    roomId: null,          // Active room name
-    socket: null,          // Socket.IO connection
+    roomId:         null,  // Active room name
+    socket:         null,  // Socket.IO connection
     isRemoteAction: false, // Prevents server-driven events from echoing back
-    video: null,           // Active <video> element on the page
+    video:          null,  // Active <video> element on the page
+    nickname:       null,  // Cached so reconnect can re-join without re-reading
 };
 
 
@@ -199,17 +224,90 @@ async function connect(id) {
 
     // username-reader.js (MAIN world) reads window.yt and relays it here.
     // null means unauthenticated; the server assigns "Guest N".
-    const nickname = await usernamePromise;
-    console.log('[JamRoom] Connecting as:', nickname ?? 'Guest');
+    // Cache in state so reconnect handler can reuse it without re-awaiting.
+    state.nickname = await usernamePromise;
+    console.log('[JamRoom] Connecting as:', state.nickname ?? 'Guest');
 
     state.socket = io(CONFIG.SERVER_URL);
     state.roomId = id;
 
+    // ─── FIRST CONNECTION ────────────────────────────────────────────────
+    // `connect` fires once on initial connection.
+    // We join the room and activate visibility protection here.
     state.socket.on('connect', () => {
         console.log('[JamRoom] Connected. Room:', state.roomId);
-        state.socket.emit('joinRoom', { roomId: state.roomId, nickname });
+        state.socket.emit('joinRoom', { roomId: state.roomId, nickname: state.nickname });
         bypassVisibility();
     });
+
+
+    // ─── AUTO-RECONNECT RECOVERY ─────────────────────────────────────────
+    // Socket.IO reconnects the transport automatically when the network
+    // recovers. However, the server has already evicted this client from
+    // its room on `disconnect`, so we must re-emit `joinRoom` to get back in.
+    //
+    // Why NOT use `connect` for this?
+    //   `connect` fires on both the initial connection AND every reconnection.
+    //   Handling both cases in `connect` would cause a double `joinRoom` on
+    //   the first load (once from `connect`, once because it looks like a
+    //   reconnect). Using the dedicated `reconnect` event keeps the two
+    //   code paths cleanly separated — no flag hacks needed.
+    //
+    // Why read `savedRoomId` from storage instead of relying on `state.roomId`?
+    //   `state.roomId` is in-memory. If the content script is restarted
+    //   (extension update, browser restore), memory is cleared. Storage
+    //   survives all of these scenarios and is the canonical source of truth.
+    state.socket.on('reconnect', (attemptNumber) => {
+        console.log(`[JamRoom] Reconnected after ${attemptNumber} attempt(s). Re-joining room...`);
+
+        // Read the authoritative roomId from storage instead of trusting
+        // in-memory state which may have been cleared during the outage.
+        chrome.storage.local.get(['savedRoomId'], (res) => {
+            const roomId = res.savedRoomId || state.roomId;
+            if (!roomId) {
+                console.warn('[JamRoom] Reconnected but no savedRoomId found. Cannot re-join.');
+                return;
+            }
+
+            // Keep state in sync with storage's ground truth.
+            state.roomId = roomId;
+
+            state.socket.emit('joinRoom', { roomId, nickname: state.nickname });
+            console.log('[JamRoom] Re-emitted joinRoom for room:', roomId);
+
+            // Restore the badge so the user sees "ON" again.
+            // background.js applies the actual chrome.action call.
+            chrome.runtime.sendMessage({
+                type:  'SET_BADGE',
+                text:  'ON',
+                color: '#00FF00',
+            });
+        });
+    });
+
+
+    // ─── DISCONNECT FEEDBACK ─────────────────────────────────────────────
+    // Inform the user when the connection drops so they know a reconnect
+    // attempt is in progress. The badge turns yellow ("...") during
+    // the outage and reverts to green ("ON") in the `reconnect` handler above.
+    //
+    // `disconnect` reason "io client disconnect" means the user explicitly
+    // called socket.disconnect() (e.g. LEAVE button). We do NOT show the
+    // reconnecting badge in that case — the user intentionally left.
+    state.socket.on('disconnect', (reason) => {
+        const intentional = reason === 'io client disconnect';
+        console.log(`[JamRoom] Disconnected. Reason: ${reason}. Intentional: ${intentional}`);
+
+        if (!intentional) {
+            // Temporary network drop — signal the user that recovery is underway.
+            chrome.runtime.sendMessage({
+                type:  'SET_BADGE',
+                text:  '...',
+                color: '#FFA500', // Orange = reconnecting
+            });
+        }
+    });
+
 
     // A. Heartbeat request — server asks the leader for the current timestamp.
     state.socket.on('heartbeat_request', (data) => {
