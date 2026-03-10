@@ -16,7 +16,7 @@ const toast        = document.getElementById('toast');
 // pattern — never toggled ad-hoc elsewhere (DRY).
 // -------------------------------------------
 function updateCopyVisibility(isInRoom) {
-  copyBtn.style.display = isInRoom ? 'block' : 'none';
+  copyBtn.style.display = isInRoom ? 'flex' : 'none';
 }
 
 

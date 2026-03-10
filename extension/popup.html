@@ -9,41 +9,45 @@
     #joinBtn  { background-color: #ff0000; color: white; }
     #leaveBtn { background-color: #333;    color: white; }
 
-    /* Input wrapper — needed to position copyBtn inside the input */
+    /* Input wrapper — flex row keeps copyBtn vertically centered
+       relative to the input without relying on absolute positioning */
     .input-wrapper {
-      position: relative;
+      display: flex;
+      align-items: center;
       width: 94%;
       margin: 0 auto 10px auto;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      overflow: hidden; /* clips copyBtn corners to wrapper radius */
+      background: #fff;
     }
 
     .input-wrapper input {
-      width: 100%;
-      padding: 8px 34px 8px 8px; /* right padding reserves space for the icon */
-      box-sizing: border-box;
-      border: 1px solid #ccc;
-      border-radius: 4px;
+      flex: 1;             /* takes all remaining width */
+      padding: 8px;
+      border: none;        /* border is now on the wrapper */
+      outline: none;
       font-size: 14px;
+      background: transparent;
     }
 
-    /* Copy icon button — floats inside the input on the right */
+    /* Copy icon button — sits flush on the right edge of the wrapper */
     #copyBtn {
-      position: absolute;
-      right: 4px;
-      top: 50%;
-      transform: translateY(-50%);
-      width: 28px;
-      height: 28px;
+      flex-shrink: 0;
+      width: 30px;
+      height: 100%;        /* stretches to full input height automatically */
       padding: 0;
       border: none;
+      border-left: 1px solid #ddd;
       background-color: #111;
       cursor: pointer;
       font-size: 15px;
-      line-height: 28px;   /* matches height → vertically centers emoji */
-      text-align: center;  /* horizontally centers emoji */
-      border-radius: 4px;
+      line-height: 1;
+      display: none;       /* hidden until user joins a room */
+      align-items: center;
+      justify-content: center;
       color: #fff;
       transition: background-color 0.15s ease;
-      display: none; /* hidden until user joins a room */
     }
 
     #copyBtn:hover { background-color: #333; }
