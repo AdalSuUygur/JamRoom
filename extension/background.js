@@ -18,21 +18,38 @@ chrome.runtime.onMessage.addListener((message, sender) => {
 chrome.tabs.onRemoved.addListener((tabId) => {
     chrome.storage.local.get(['activeTabId'], (result) => {
         // Kapanan tab, JamRoom'un aktif olduğu tab değilse işlem yapma.
+        //
+        // BUG FIX: activeTabId daha önce hiç storage'a yazılmıyordu.
+        // Bu yüzden result.activeTabId her zaman undefined geliyordu ve
+        // (undefined !== herhangi_bir_sayı) her zaman true döndüğünden
+        // bu guard çalışmıyor, her tab kapandığında savedRoomId siliniyordu.
+        // Artık popup.js JOIN sırasında SET_ACTIVE_TAB mesajı gönderiyor.
         if (result.activeTabId !== tabId) return;
 
         // Storage'ı temizle: oda oturumu artık geçersiz.
-        // roomUserCount ve roomUserList de temizlenir;
-        // popup yeniden açılınca "Not in an active room." gösterilir.
         chrome.storage.local.remove([
             'savedRoomId',
             'activeTabId',
             'roomUserCount',
             'roomUserList',
+            'roomQueue',   // Queue da temizlenir; yeni odada eski sıra görünmesin.
         ]);
 
-        // Badge zaten tab kapandığı için görünmez olur;
-        // yine de explicit temizlik yapıyoruz — tab restore edilirse
-        // eski "ON" badge'i kalmasın.
         chrome.action.setBadgeText({ text: "", tabId });
     });
+});
+
+// --- ACTIVE TAB KAYDI ---
+// popup.js, JOIN_NEW_ROOM sırasında aktif tab ID'sini buraya bildirir.
+// background.js bunu storage'a yazar; böylece onRemoved doğru tab'ı tanır.
+//
+// Neden ayrı bir mesaj tipi?
+// popup.js zaten tabs.query ile aktif tab'a erişiyor; bu ID'yi
+// doğrudan background'a iletmek en temiz yol — storage'ı popup'tan
+// yazmak da işe yarardı ama background service worker'ın her zaman
+// ayakta olduğu garantisi daha güvenilir.
+chrome.runtime.onMessage.addListener((message) => {
+    if (message.type === "SET_ACTIVE_TAB" && message.tabId) {
+        chrome.storage.local.set({ activeTabId: message.tabId });
+    }
 });
