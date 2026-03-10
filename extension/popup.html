@@ -6,11 +6,11 @@
     body { width: 250px; font-family: sans-serif; padding: 15px; text-align: center; }
     h3 { color: #ff0000; margin-top: 0; }
     input { width: 90%; padding: 8px; margin-bottom: 10px; }
-    button { width: 100%; padding: 10px; border: none; border-radius: 4px; cursor: pointer; margin-top: 5px; font-weight: bold;}
-    #joinBtn { background-color: #ff0000; color: white; }
-    #leaveBtn { background-color: #333; color: white; }
+    button { width: 100%; padding: 10px; border: none; border-radius: 4px; cursor: pointer; margin-top: 5px; font-weight: bold; }
+    #joinBtn  { background-color: #ff0000; color: white; }
+    #leaveBtn { background-color: #333;    color: white; }
 
-    /* Üye listesi — içerik gelince genişler, max 120px sonra scroll */
+    /* Member list — grows with content, scrolls after 120px */
     #memberList {
       margin-top: 12px;
       text-align: left;
@@ -28,20 +28,32 @@
       text-overflow: ellipsis;
     }
 
-    /* Zebra görünümü — uzun listelerde okunurluğu artırır */
+    /* Zebra pattern improves readability on long lists */
     .member-item:nth-child(even) {
       background-color: #f5f5f5;
     }
   </style>
 </head>
 <body>
-  <h3>JamRoom</h3>
-  <p id="countDisplay" style="color:#555;font-size:14px;font-weight:bold;margin-bottom:10px;">In room: ? users</p>
-  <input type="text" id="roomInput" value="room-1">
-  <button id="joinBtn">JOIN ROOM</button>
-  <button id="leaveBtn">LEAVE ROOM</button>
+  <!--
+    data-i18n attributes are read by applyI18n() in popup.js.
+    Text content here acts as a fallback during initial render
+    before applyI18n() runs (script is deferred).
+  -->
+  <h3 data-i18n="popupTitle">JamRoom</h3>
 
-  <!-- renderMemberList() tarafından doldurulur -->
+  <p id="countDisplay"
+     style="color:#555; font-size:14px; font-weight:bold; margin-bottom:10px;"
+     data-i18n="statusDefault">
+    Not in an active room.
+  </p>
+
+  <input type="text" id="roomInput" value="room-1">
+
+  <button id="joinBtn"  data-i18n="joinBtn">JOIN ROOM</button>
+  <button id="leaveBtn" data-i18n="leaveBtn">LEAVE ROOM</button>
+
+  <!-- Populated by renderMemberList() in popup.js -->
   <div id="memberList"></div>
 
   <script src="popup.js" defer></script>

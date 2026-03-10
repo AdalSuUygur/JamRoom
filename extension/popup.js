@@ -2,153 +2,153 @@
 // JamRoom - popup.js
 // -------------------------------------------
 
-// Popup içindeki durum metnini gösteren <p> elementi
+// DOM references resolved once at startup — avoids repeated getElementById calls (DRY).
 const countDisplay = document.getElementById('countDisplay');
-
-// Oda adının girildiği input alanı
-const roomInput = document.getElementById('roomInput');
+const roomInput    = document.getElementById('roomInput');
 
 
 // -------------------------------------------
-// Yardımcı Fonksiyon: UI durum mesajı güncelleme
-// Alert yerine kullanıcıya popup içinde mesaj gösterir
+// applyI18n
+// Replaces the textContent of every element
+// that carries a [data-i18n] attribute with the
+// corresponding chrome.i18n.getMessage() value.
+//
+// Why not __MSG_key__ directly in HTML?
+// __MSG_key__ substitution only works in
+// manifest fields, not in popup HTML pages (MV3).
+// applyI18n() called once at startup is the
+// correct idiomatic pattern for MV3 popups.
 // -------------------------------------------
-function setStatus(text) {
-  if (countDisplay) {
-    countDisplay.innerText = text;
-  }
+function applyI18n() {
+  document.querySelectorAll('[data-i18n]').forEach((el) => {
+    const key     = el.dataset.i18n;
+    const message = chrome.i18n.getMessage(key);
+    // Guard: keep existing text if the key is missing from messages.json
+    // so the UI never silently goes blank during development.
+    if (message) el.textContent = message;
+  });
 }
 
 
 // -------------------------------------------
-// JOIN BUTONU TIKLANDIĞINDA ÇALIŞIR
+// setStatus
+// Single place to update the status line.
+// Receives a pre-localized string; callers are
+// responsible for calling getMessage() before
+// passing the value in.
+// -------------------------------------------
+function setStatus(text) {
+  if (countDisplay) countDisplay.innerText = text;
+}
+
+
+// -------------------------------------------
+// isYouTubeTab
+// Extracted predicate used by both joinBtn and
+// leaveBtn to avoid duplicating the same guard
+// condition in two places (DRY).
+// -------------------------------------------
+function isYouTubeTab(tab) {
+  return Boolean(tab && tab.url && tab.url.includes('youtube.com'));
+}
+
+
+// -------------------------------------------
+// JOIN
 // -------------------------------------------
 document.getElementById('joinBtn').addEventListener('click', () => {
-
-  // Kullanıcının yazdığı oda adını alıyoruz
   const roomId = roomInput.value.trim();
 
-  // Eğer oda adı boşsa kullanıcıyı popup içinden bilgilendiriyoruz
   if (!roomId) {
-    setStatus("Please enter a room name.");
-    return; // İşlemi durdur
+    setStatus(chrome.i18n.getMessage('errorEnterRoomName'));
+    return;
   }
 
-  // Aktif sekmeyi kontrol ediyoruz
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    const currentTab = tabs[0];
-
-    // Eğer aktif sekme yoksa veya YouTube değilse kullanıcıya bilgi ver
-    if (!currentTab || !currentTab.url || !currentTab.url.includes("youtube.com")) {
-      setStatus("Open a YouTube tab to use JamRoom.");
-      return; // İşlemi durdur
-    }
-
-    // Oda adını kaydet, eski liste verisini temizle.
-    // Yeni odanın listesi server'dan gelene kadar stale data görünmesin.
-    chrome.storage.local.set({ savedRoomId: roomId }, () => {
-      chrome.storage.local.remove(['roomUserCount', 'roomUserList'], () => {
-        renderMemberList([]);
-        sendMessageToContent("JOIN_NEW_ROOM", roomId);
-        setStatus(`Joining: ${roomId}...`);
-      });
-    });
-  });
-});
-
-
-// -------------------------------------------
-// LEAVE BUTONU TIKLANDIĞINDA ÇALIŞIR
-// -------------------------------------------
-document.getElementById('leaveBtn').addEventListener('click', () => {
-
-  // joinBtn gibi aktif sekmenin YouTube olup olmadığını kontrol et.
-  // Yanlış sekmeden tıklanırsa sendMessage sessizce başarısız olur;
-  // kullanıcıyı önceden bilgilendirmek daha iyi UX sağlar.
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    const currentTab = tabs[0];
-
-    if (!currentTab || !currentTab.url || !currentTab.url.includes("youtube.com")) {
-      setStatus("Open a YouTube tab to leave the room.");
+    if (!isYouTubeTab(tabs[0])) {
+      setStatus(chrome.i18n.getMessage('errorOpenYouTubeJoin'));
       return;
     }
 
-    // Content script'e odadan çık komutu gönder
-    sendMessageToContent("LEAVE_ROOM", null);
-
-    // Local storage'dan kayıtlı oda ve kullanıcı sayısını temizle
-    chrome.storage.local.remove(['savedRoomId', 'roomUserCount', 'roomUserList']);
-
-    // UI durumunu sıfırla
-    setStatus("Not in an active room.");
+    // Persist room so the popup can restore state after being closed.
+    chrome.storage.local.set({ savedRoomId: roomId }, () => {
+      sendMessageToContent('JOIN_NEW_ROOM', roomId);
+      setStatus(chrome.i18n.getMessage('statusJoining', [roomId]));
+    });
   });
 });
 
 
 // -------------------------------------------
-// Content Script'e Mesaj Gönderme Fonksiyonu
-// Aynı zamanda badge kontrolü yapar
+// LEAVE
+// -------------------------------------------
+document.getElementById('leaveBtn').addEventListener('click', () => {
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (!isYouTubeTab(tabs[0])) {
+      setStatus(chrome.i18n.getMessage('errorOpenYouTubeLeave'));
+      return;
+    }
+
+    sendMessageToContent('LEAVE_ROOM', null);
+    chrome.storage.local.remove(['savedRoomId', 'roomUserCount']);
+    setStatus(chrome.i18n.getMessage('statusDefault'));
+  });
+});
+
+
+// -------------------------------------------
+// sendMessageToContent
+// Sends a typed message to the active tab's
+// content script and manages the badge state.
+//
+// Badge is set here rather than background.js
+// because the popup already holds the active tab
+// reference; a round-trip message would only add
+// unnecessary latency.
 // -------------------------------------------
 function sendMessageToContent(type, data) {
-
-  // Aktif sekmeyi bul
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-
     if (!tabs[0]) return;
 
-    // Content script'e mesaj gönder
-    chrome.tabs.sendMessage(tabs[0].id, {
-      type: type,
-      roomId: data
-    });
+    chrome.tabs.sendMessage(tabs[0].id, { type, roomId: data });
 
-    // Badge kontrolü (extension ikonunun üstündeki ON yazısı)
-    if (type === "JOIN_NEW_ROOM") {
-
-      // Odaya girince badge'i aktif yap
-      chrome.action.setBadgeText({ text: "ON", tabId: tabs[0].id });
-      chrome.action.setBadgeBackgroundColor({ color: "#00FF00", tabId: tabs[0].id });
-
-    } else if (type === "LEAVE_ROOM") {
-
-      // Odadan çıkınca badge'i temizle
-      chrome.action.setBadgeText({ text: "", tabId: tabs[0].id });
+    if (type === 'JOIN_NEW_ROOM') {
+      chrome.action.setBadgeText({ text: 'ON', tabId: tabs[0].id });
+      chrome.action.setBadgeBackgroundColor({ color: '#00FF00', tabId: tabs[0].id });
+    } else if (type === 'LEAVE_ROOM') {
+      chrome.action.setBadgeText({ text: '', tabId: tabs[0].id });
     }
   });
 }
 
 
 // -------------------------------------------
-// Content Script'ten Gelen Mesajları Dinleme
-// JOIN başarılı olduğunda geri bildirim alır
+// Incoming messages from content.js
+// ROOM_JOINED confirms the socket connected;
+// we then wait 1.2 s for the server's first
+// userListUpdate before rendering the member list.
 // -------------------------------------------
 chrome.runtime.onMessage.addListener((msg) => {
+  if (msg.type !== 'ROOM_JOINED') return;
 
-  if (msg.type === "ROOM_JOINED") {
+  if (msg.roomId) roomInput.value = msg.roomId;
+  setStatus(chrome.i18n.getMessage('statusJoined', [msg.roomId]));
 
-    if (msg.roomId) {
-      roomInput.value = msg.roomId;
-    }
-
-    setStatus(`Joined: ${msg.roomId}`);
-
-    // 1.2 saniye sonra kullanıcı sayısını ve üye listesini göster.
-    // Gecikme: server'ın userListUpdate göndermesi için yeterli tampon.
-    setTimeout(() => {
-      chrome.storage.local.get(['roomUserCount', 'roomUserList'], (res) => {
-        const count = res.roomUserCount || 1;
-        setStatus(`In room: ${count} users`);
-        renderMemberList(res.roomUserList || []);
-      });
-    }, 1200);
-  }
+  setTimeout(() => {
+    chrome.storage.local.get(['roomUserCount', 'roomUserList'], (res) => {
+      const count = res.roomUserCount || 1;
+      setStatus(chrome.i18n.getMessage('statusInRoom', [String(count)]));
+      renderMemberList(res.roomUserList || []);
+    });
+  }, 1200);
 });
 
 
 // -------------------------------------------
-// Gerçek Zamanlı Storage Dinleyicisi
-// Popup açık olduğunda server'dan gelen userListUpdate ve userCountUpdate
-// değişikliklerini anında yansıtır — popup'ı kapatıp açmaya gerek kalmaz.
+// Real-time storage listener
+// Reflects server-pushed userListUpdate and
+// userCountUpdate while the popup is open —
+// no close/reopen cycle required.
 // -------------------------------------------
 chrome.storage.onChanged.addListener((changes) => {
   if (changes.roomUserList) {
@@ -157,37 +157,38 @@ chrome.storage.onChanged.addListener((changes) => {
 
   if (changes.roomUserCount) {
     const count = changes.roomUserCount.newValue || 0;
-    if (count === 0) {
-      setStatus("Not in an active room.");
-    } else {
-      setStatus(`In room: ${count} users`);
-    }
+    const key   = count === 0 ? 'statusDefault' : 'statusInRoom';
+    const args  = count === 0 ? []              : [String(count)];
+    setStatus(chrome.i18n.getMessage(key, args));
   }
 });
 
 
 // -------------------------------------------
-// Popup açıldığında önceki oda bilgisini geri yükleme
+// Restore previous session on popup open.
+// savedRoomId present → user is (or was) in a room.
 // -------------------------------------------
 chrome.storage.local.get(['savedRoomId', 'roomUserCount', 'roomUserList'], (result) => {
-
   if (result.savedRoomId) {
     roomInput.value = result.savedRoomId;
-    const count = result.roomUserCount || 1;
-    setStatus(`In room: ${count} users`);
+    const count     = result.roomUserCount || 1;
+    setStatus(chrome.i18n.getMessage('statusInRoom', [String(count)]));
     renderMemberList(result.roomUserList || []);
   } else {
-    roomInput.value = "";
-    setStatus("Not in an active room.");
+    roomInput.value = '';
+    setStatus(chrome.i18n.getMessage('statusDefault'));
     renderMemberList([]);
   }
 });
 
 
 // -------------------------------------------
-// Üye Listesi Render Fonksiyonu
-// Server'dan gelen nickname dizisini popup'ta listeler.
-// Liste boşsa #memberList alanını temizler.
+// renderMemberList
+// Maps a nickname array to member-item divs.
+// Clears the container when the list is empty
+// so stale names never linger after a leave.
+// Unicode escape for 👤 keeps the source file
+// pure ASCII — avoids encoding issues in review.
 // -------------------------------------------
 function renderMemberList(list) {
   const container = document.getElementById('memberList');
@@ -199,6 +200,11 @@ function renderMemberList(list) {
   }
 
   container.innerHTML = list
-    .map(name => `<div class="member-item">👤 ${name}</div>`)
+    .map(name => `<div class="member-item">\u{1F464} ${name}</div>`)
     .join('');
 }
+
+
+// Bootstrap: localize all [data-i18n] elements
+// after the DOM is ready (script is deferred).
+applyI18n();

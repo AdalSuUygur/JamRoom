@@ -1,13 +1,14 @@
 {
   "manifest_version": 3,
-  "name": "JamRoom",
+  "name": "__MSG_extensionName__",
+  "description": "__MSG_extensionDescription__",
   "version": "1.2.0",
-  "description": "Real-time playback sync for YouTube rooms (play/pause/seek).",
+  "default_locale": "en",
   "homepage_url": "https://github.com/AdalSuUygur/JamRoom",
   "minimum_chrome_version": "114",
   "icons": {
-    "16": "icons/icon16.png",
-    "48": "icons/icon48.png",
+    "16":  "icons/icon16.png",
+    "48":  "icons/icon48.png",
     "128": "icons/icon128.png"
   },
   "permissions": [
@@ -19,17 +20,17 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_icon": "icons/icon48.png",
-    "default_title": "JamRoom"
+    "default_icon": {
+      "48": "icons/icon48.png"
+    },
+    "default_title": "__MSG_extensionName__"
   },
   "background": {
     "service_worker": "background.js"
   },
   "content_scripts": [
     {
-      "matches": [
-        "https://www.youtube.com/*"
-      ],
+      "matches": ["https://www.youtube.com/*"],
       "js": [
         "socket.io.min.js",
         "config.js",
@@ -38,12 +39,8 @@
       "run_at": "document_idle"
     },
     {
-      "matches": [
-        "https://www.youtube.com/*"
-      ],
-      "js": [
-        "username-reader.js"
-      ],
+      "matches": ["https://www.youtube.com/*"],
+      "js": ["username-reader.js"],
       "run_at": "document_idle",
       "world": "MAIN"
     }
