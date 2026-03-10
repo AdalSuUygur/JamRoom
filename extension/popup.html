@@ -31,24 +31,25 @@
       right: 4px;
       top: 50%;
       transform: translateY(-50%);
-      width: 26px;
-      height: 26px;
+      width: 28px;
+      height: 28px;
       padding: 0;
       border: none;
-      background: transparent;
+      background-color: #111;
       cursor: pointer;
       font-size: 15px;
-      line-height: 1;
-      border-radius: 3px;
-      color: #888;
-      transition: color 0.15s ease, background-color 0.15s ease;
+      line-height: 28px;   /* matches height → vertically centers emoji */
+      text-align: center;  /* horizontally centers emoji */
+      border-radius: 4px;
+      color: #fff;
+      transition: background-color 0.15s ease;
       display: none; /* hidden until user joins a room */
     }
 
-    #copyBtn:hover { color: #1a73e8; background-color: #f0f4ff; }
+    #copyBtn:hover { background-color: #333; }
 
-    /* Green checkmark swaps in after successful copy */
-    #copyBtn.btn--copied { color: #188038; }
+    /* Green background + white checkmark after successful copy */
+    #copyBtn.btn--copied { background-color: #188038; }
 
     /*
       Toast notification — slides down from the top of the popup.
