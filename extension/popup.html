@@ -9,45 +9,50 @@
     #joinBtn  { background-color: #ff0000; color: white; }
     #leaveBtn { background-color: #333;    color: white; }
 
-    /* Input wrapper — flex row keeps copyBtn vertically centered
-       relative to the input without relying on absolute positioning */
+    /* Input wrapper — relative container so copyBtn can be
+       absolutely positioned inside without affecting layout */
     .input-wrapper {
-      display: flex;
-      align-items: center;
+      position: relative;
       width: 94%;
       margin: 0 auto 10px auto;
+    }
+
+    /* Input gets right padding equal to button width so text
+       never slides under the button */
+    .input-wrapper input {
+      width: 100%;
+      padding: 8px 38px 8px 8px;
+      box-sizing: border-box;
       border: 1px solid #ccc;
       border-radius: 4px;
-      overflow: hidden; /* clips copyBtn corners to wrapper radius */
-      background: #fff;
-    }
-
-    .input-wrapper input {
-      flex: 1;             /* takes all remaining width */
-      padding: 8px;
-      border: none;        /* border is now on the wrapper */
       outline: none;
       font-size: 14px;
-      background: transparent;
     }
 
-    /* Copy icon button — sits flush on the right edge of the wrapper */
+    /* Copy button — absolutely pinned to the right edge.
+       Width and height are explicit so it is always square.
+       top/bottom: 0 + margin: auto = perfect vertical center
+       regardless of input height. */
     #copyBtn {
-      flex-shrink: 0;
-      width: 30px;
-      height: 100%;        /* stretches to full input height automatically */
+      position: absolute;
+      right: 0;
+      top: 0;
+      bottom: 0;
+      width: 34px;
+      margin: auto 0;
+      height: 34px;
       padding: 0;
       border: none;
       border-left: 1px solid #ddd;
+      border-radius: 0 4px 4px 0;
       background-color: #111;
       cursor: pointer;
-      font-size: 15px;
-      line-height: 1;
-      display: none;       /* hidden until user joins a room */
-      align-items: center;
-      justify-content: center;
+      font-size: 16px;
+      line-height: 34px;
+      text-align: center;
       color: #fff;
       transition: background-color 0.15s ease;
+      display: none; /* shown via JS when in a room */
     }
 
     #copyBtn:hover { background-color: #333; }
