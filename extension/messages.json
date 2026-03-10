@@ -74,5 +74,19 @@
   "errorOpenYouTubeLeave": {
     "message": "Open a YouTube tab to leave the room.",
     "description": "Error when the active tab is not YouTube and the user tries to leave."
-  }
+  },
+  "shareBtn": {
+  "message": "SHARE ROOM",
+  "description": "Label on the share room button."
+},
+
+"shareCopied": {
+  "message": "COPIED!",
+  "description": "Shown briefly after copying the room name to clipboard."
+},
+
+"shareTooltip": {
+  "message": "Room name copied to clipboard",
+  "description": "Tooltip shown after copy action."
+}
 }
