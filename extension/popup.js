@@ -13,7 +13,7 @@ const shareBtn     = document.getElementById('shareBtn');
 // Single authoritative function that shows or
 // hides the share button based on room state.
 // Called on join, leave, session restore, and
-// tab-close cleanup — never toggled ad-hoc.
+// ROOM_JOINED — never toggled ad-hoc elsewhere.
 // -------------------------------------------
 function updateShareVisibility(isInRoom) {
   shareBtn.classList.toggle('hidden', !isInRoom);
@@ -29,9 +29,9 @@ function updateShareVisibility(isInRoom) {
 //
 // Feedback pattern:
 //   1. Button turns green + shows "COPIED!"
-//   2. After 2 s, resets to original label/color
-// The setTimeout handle is stored so a rapid
-// double-click cannot stack multiple timers.
+//   2. After 2 s resets to original label/color
+// shareCopyTimer is stored so a rapid double-click
+// cannot stack multiple pending resets.
 // -------------------------------------------
 let shareCopyTimer = null;
 
@@ -40,13 +40,10 @@ shareBtn.addEventListener('click', () => {
   if (!roomId) return;
 
   navigator.clipboard.writeText(roomId).then(() => {
-    // Visual feedback: green + "COPIED!" label
     shareBtn.textContent = chrome.i18n.getMessage('shareCopied');
     shareBtn.classList.add('btn--copied');
 
-    // Cancel any pending reset from a previous click
     clearTimeout(shareCopyTimer);
-
     shareCopyTimer = setTimeout(() => {
       shareBtn.textContent = chrome.i18n.getMessage('shareBtn');
       shareBtn.classList.remove('btn--copied');
@@ -79,8 +76,8 @@ function applyI18n() {
     if (message) el.textContent = message;
   });
 
-  // shareBtn has no data-i18n (label changes dynamically),
-  // so we initialize it explicitly here after i18n is ready.
+  // shareBtn has no data-i18n (its label changes dynamically for
+  // the "COPIED!" state), so we initialize it explicitly here.
   shareBtn.textContent = chrome.i18n.getMessage('shareBtn');
 }
 

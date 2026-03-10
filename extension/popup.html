@@ -10,6 +10,21 @@
     #joinBtn  { background-color: #ff0000; color: white; }
     #leaveBtn { background-color: #333;    color: white; }
 
+    /* Share button — visible only when in a room */
+    #shareBtn {
+      background-color: #1a73e8;
+      color: white;
+      transition: background-color 0.2s ease;
+    }
+
+    /* Copied feedback state — green confirms success */
+    #shareBtn.btn--copied {
+      background-color: #188038;
+    }
+
+    /* Hidden utility — toggled by updateShareVisibility() in popup.js */
+    .hidden { display: none !important; }
+
     /* Member list — grows with content, scrolls after 120px */
     #memberList {
       margin-top: 12px;
@@ -52,6 +67,14 @@
 
   <button id="joinBtn"  data-i18n="joinBtn">JOIN ROOM</button>
   <button id="leaveBtn" data-i18n="leaveBtn">LEAVE ROOM</button>
+
+  <!--
+    shareBtn starts hidden; updateShareVisibility(true) reveals it
+    once the user joins a room. Label is managed dynamically in
+    popup.js to support the "COPIED!" feedback state without a
+    full applyI18n() re-run.
+  -->
+  <button id="shareBtn" class="hidden">SHARE ROOM</button>
 
   <!-- Populated by renderMemberList() in popup.js -->
   <div id="memberList"></div>
