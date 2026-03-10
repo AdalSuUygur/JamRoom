@@ -5,48 +5,67 @@
 // DOM references resolved once at startup — avoids repeated getElementById calls (DRY).
 const countDisplay = document.getElementById('countDisplay');
 const roomInput    = document.getElementById('roomInput');
-const shareBtn     = document.getElementById('shareBtn');
+const copyBtn      = document.getElementById('copyBtn');
+const toast        = document.getElementById('toast');
 
 
 // -------------------------------------------
-// updateShareVisibility
-// Single authoritative function that shows or
-// hides the share button based on room state.
-// Called on join, leave, session restore, and
-// ROOM_JOINED — never toggled ad-hoc elsewhere.
+// updateCopyVisibility
+// Shows or hides the copy icon based on whether
+// the user is in an active room. Single call site
+// pattern — never toggled ad-hoc elsewhere (DRY).
 // -------------------------------------------
-function updateShareVisibility(isInRoom) {
-  shareBtn.classList.toggle('hidden', !isInRoom);
+function updateCopyVisibility(isInRoom) {
+  copyBtn.style.display = isInRoom ? 'block' : 'none';
 }
 
 
 // -------------------------------------------
-// SHARE ROOM
-// Copies the current room name to the clipboard.
-// roomInput.value is the single source of truth
-// for the active room — no separate currentRoomId
-// variable needed (avoids duplicate state).
-//
-// Feedback pattern:
-//   1. Button turns green + shows "COPIED!"
-//   2. After 2 s resets to original label/color
-// shareCopyTimer is stored so a rapid double-click
-// cannot stack multiple pending resets.
+// showToast
+// Displays a short-lived notification that slides
+// in from the top of the popup.
+// A pending hide timer is cleared before each new
+// call so rapid clicks don't stack multiple timers.
 // -------------------------------------------
-let shareCopyTimer = null;
+let toastTimer = null;
 
-shareBtn.addEventListener('click', () => {
+function showToast(message, duration = 2000) {
+  toast.textContent = message;
+  toast.classList.add('show');
+
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove('show'), duration);
+}
+
+
+// -------------------------------------------
+// COPY ROOM NAME
+// Copies roomInput.value to the clipboard.
+// roomInput.value is the single source of truth
+// for the active room name — no duplicate state.
+//
+// Feedback:
+//   icon  → ✓ (green) for 2 s, then resets to 📋
+//   toast → "COPIED! — <roomId>" slides in for 2 s
+// -------------------------------------------
+let copyResetTimer = null;
+
+copyBtn.addEventListener('click', () => {
   const roomId = roomInput.value.trim();
   if (!roomId) return;
 
   navigator.clipboard.writeText(roomId).then(() => {
-    shareBtn.textContent = chrome.i18n.getMessage('shareCopied');
-    shareBtn.classList.add('btn--copied');
+    // Icon: swap clipboard emoji → green checkmark
+    copyBtn.textContent = '\u2713';
+    copyBtn.classList.add('btn--copied');
 
-    clearTimeout(shareCopyTimer);
-    shareCopyTimer = setTimeout(() => {
-      shareBtn.textContent = chrome.i18n.getMessage('shareBtn');
-      shareBtn.classList.remove('btn--copied');
+    // Toast: show room name confirmation
+    showToast(chrome.i18n.getMessage('shareCopied') + ' \u2014 ' + roomId);
+
+    clearTimeout(copyResetTimer);
+    copyResetTimer = setTimeout(() => {
+      copyBtn.textContent = '\uD83D\uDCCB'; // 📋
+      copyBtn.classList.remove('btn--copied');
     }, 2000);
   }).catch(() => {
     // clipboard API can fail if the popup loses focus mid-click;
@@ -75,10 +94,6 @@ function applyI18n() {
     // so the UI never silently goes blank during development.
     if (message) el.textContent = message;
   });
-
-  // shareBtn has no data-i18n (its label changes dynamically for
-  // the "COPIED!" state), so we initialize it explicitly here.
-  shareBtn.textContent = chrome.i18n.getMessage('shareBtn');
 }
 
 
@@ -141,7 +156,7 @@ document.getElementById('leaveBtn').addEventListener('click', () => {
     sendMessageToContent('LEAVE_ROOM', null);
     chrome.storage.local.remove(['savedRoomId', 'roomUserCount']);
     setStatus(chrome.i18n.getMessage('statusDefault'));
-    updateShareVisibility(false);
+    updateCopyVisibility(false);
   });
 });
 
@@ -189,7 +204,7 @@ chrome.runtime.onMessage.addListener((msg) => {
       const count = res.roomUserCount || 1;
       setStatus(chrome.i18n.getMessage('statusInRoom', [String(count)]));
       renderMemberList(res.roomUserList || []);
-      updateShareVisibility(true);
+      updateCopyVisibility(true);
     });
   }, 1200);
 });
@@ -225,12 +240,12 @@ chrome.storage.local.get(['savedRoomId', 'roomUserCount', 'roomUserList'], (resu
     const count     = result.roomUserCount || 1;
     setStatus(chrome.i18n.getMessage('statusInRoom', [String(count)]));
     renderMemberList(result.roomUserList || []);
-    updateShareVisibility(true);
+    updateCopyVisibility(true);
   } else {
     roomInput.value = '';
     setStatus(chrome.i18n.getMessage('statusDefault'));
     renderMemberList([]);
-    updateShareVisibility(false);
+    updateCopyVisibility(false);
   }
 });
 

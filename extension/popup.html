@@ -5,25 +5,79 @@
   <style>
     body { width: 250px; font-family: sans-serif; padding: 15px; text-align: center; }
     h3 { color: #ff0000; margin-top: 0; }
-    input { width: 90%; padding: 8px; margin-bottom: 10px; }
     button { width: 100%; padding: 10px; border: none; border-radius: 4px; cursor: pointer; margin-top: 5px; font-weight: bold; }
     #joinBtn  { background-color: #ff0000; color: white; }
     #leaveBtn { background-color: #333;    color: white; }
 
-    /* Share button — visible only when in a room */
-    #shareBtn {
-      background-color: #1a73e8;
-      color: white;
-      transition: background-color 0.2s ease;
+    /* Input wrapper — needed to position copyBtn inside the input */
+    .input-wrapper {
+      position: relative;
+      width: 94%;
+      margin: 0 auto 10px auto;
     }
 
-    /* Copied feedback state — green confirms success */
-    #shareBtn.btn--copied {
-      background-color: #188038;
+    .input-wrapper input {
+      width: 100%;
+      padding: 8px 34px 8px 8px; /* right padding reserves space for the icon */
+      box-sizing: border-box;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 14px;
     }
 
-    /* Hidden utility — toggled by updateShareVisibility() in popup.js */
-    .hidden { display: none !important; }
+    /* Copy icon button — floats inside the input on the right */
+    #copyBtn {
+      position: absolute;
+      right: 4px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 26px;
+      height: 26px;
+      padding: 0;
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      font-size: 15px;
+      line-height: 1;
+      border-radius: 3px;
+      color: #888;
+      transition: color 0.15s ease, background-color 0.15s ease;
+      display: none; /* hidden until user joins a room */
+    }
+
+    #copyBtn:hover { color: #1a73e8; background-color: #f0f4ff; }
+
+    /* Green checkmark swaps in after successful copy */
+    #copyBtn.btn--copied { color: #188038; }
+
+    /*
+      Toast notification — slides down from the top of the popup.
+      Starts above the viewport (translateY(-110%)) and animates
+      to visible position. Dismissed automatically after 2 s.
+    */
+    #toast {
+      position: fixed;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-110%);
+      background-color: #323232;
+      color: #fff;
+      padding: 7px 16px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: bold;
+      white-space: nowrap;
+      pointer-events: none;
+      opacity: 0;
+      transition: transform 0.22s ease, opacity 0.22s ease;
+      z-index: 999;
+    }
+
+    /* .show slides the toast into view */
+    #toast.show {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+    }
 
     /* Member list — grows with content, scrolls after 120px */
     #memberList {
@@ -44,17 +98,17 @@
     }
 
     /* Zebra pattern improves readability on long lists */
-    .member-item:nth-child(even) {
-      background-color: #f5f5f5;
-    }
+    .member-item:nth-child(even) { background-color: #f5f5f5; }
   </style>
 </head>
 <body>
+
   <!--
-    data-i18n attributes are read by applyI18n() in popup.js.
-    Text content here acts as a fallback during initial render
-    before applyI18n() runs (script is deferred).
+    Toast lives at the top of the body so it overlays everything.
+    Text is set dynamically by showToast() in popup.js.
   -->
+  <div id="toast"></div>
+
   <h3 data-i18n="popupTitle">JamRoom</h3>
 
   <p id="countDisplay"
@@ -63,18 +117,20 @@
     Not in an active room.
   </p>
 
-  <input type="text" id="roomInput" value="room-1">
+  <!--
+    .input-wrapper lets #copyBtn be positioned relative to the input.
+    #copyBtn starts hidden; updateCopyVisibility(true) reveals it
+    once the user successfully joins a room.
+    &#128203; = 📋 (clipboard icon), &#10003; = ✓ (check mark)
+    — both are pure ASCII escapes to avoid encoding issues.
+  -->
+  <div class="input-wrapper">
+    <input type="text" id="roomInput" value="room-1">
+    <button id="copyBtn" title="Copy room name">&#128203;</button>
+  </div>
 
   <button id="joinBtn"  data-i18n="joinBtn">JOIN ROOM</button>
   <button id="leaveBtn" data-i18n="leaveBtn">LEAVE ROOM</button>
-
-  <!--
-    shareBtn starts hidden; updateShareVisibility(true) reveals it
-    once the user joins a room. Label is managed dynamically in
-    popup.js to support the "COPIED!" feedback state without a
-    full applyI18n() re-run.
-  -->
-  <button id="shareBtn" class="hidden">SHARE ROOM</button>
 
   <!-- Populated by renderMemberList() in popup.js -->
   <div id="memberList"></div>
