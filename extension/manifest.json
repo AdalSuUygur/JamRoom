@@ -2,13 +2,13 @@
   "manifest_version": 3,
   "name": "__MSG_extensionName__",
   "description": "__MSG_extensionDescription__",
-  "version": "1.2.0",
+  "version": "2.0.0",
   "default_locale": "en",
   "homepage_url": "https://github.com/AdalSuUygur/JamRoom",
   "minimum_chrome_version": "114",
   "icons": {
-    "16":  "icons/icon16.png",
-    "48":  "icons/icon48.png",
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
   "permissions": [
@@ -30,7 +30,9 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://www.youtube.com/*"],
+      "matches": [
+        "https://www.youtube.com/*"
+      ],
       "js": [
         "socket.io.min.js",
         "config.js",
@@ -39,10 +41,20 @@
       "run_at": "document_idle"
     },
     {
-      "matches": ["https://www.youtube.com/*"],
-      "js": ["username-reader.js"],
+      "matches": [
+        "https://www.youtube.com/*"
+      ],
+      "js": [
+        "username-reader.js"
+      ],
       "run_at": "document_idle",
       "world": "MAIN"
     }
-  ]
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "jamroom@adalsuuygur",
+      "strict_min_version": "109.0"
+    }
+  }
 }

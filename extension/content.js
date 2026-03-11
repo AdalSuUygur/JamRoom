@@ -30,6 +30,10 @@
  *   update, page restore), memory is gone. Storage is
  *   the single source of truth that survives all of these.
  */
+// [FIREFOX COMPAT] Single compatibility shim — works on Chrome and Firefox.
+// Chrome exposes `chrome.*`; Firefox exposes `browser.*`. Both work with `ext`.
+const ext = typeof browser !== 'undefined' ? browser : chrome;
+
 const state = {
     roomId:         null,  // Active room name
     socket:         null,  // Socket.IO connection
@@ -262,7 +266,7 @@ async function connect(id) {
 
         // Read the authoritative roomId from storage instead of trusting
         // in-memory state which may have been cleared during the outage.
-        chrome.storage.local.get(['savedRoomId'], (res) => {
+        ext.storage.local.get(['savedRoomId'], (res) => {
             const roomId = res.savedRoomId || state.roomId;
             if (!roomId) {
                 console.warn('[JamRoom] Reconnected but no savedRoomId found. Cannot re-join.');
@@ -277,7 +281,7 @@ async function connect(id) {
 
             // Restore the badge so the user sees "ON" again.
             // background.js applies the actual chrome.action call.
-            chrome.runtime.sendMessage({
+            ext.runtime.sendMessage({
                 type:  'SET_BADGE',
                 text:  'ON',
                 color: '#00FF00',
@@ -300,7 +304,7 @@ async function connect(id) {
 
         if (!intentional) {
             // Temporary network drop — signal the user that recovery is underway.
-            chrome.runtime.sendMessage({
+            ext.runtime.sendMessage({
                 type:  'SET_BADGE',
                 text:  '...',
                 color: '#FFA500', // Orange = reconnecting
@@ -342,19 +346,19 @@ async function connect(id) {
 
     // D. User count update — written to storage; popup reads from there.
     state.socket.on('userCountUpdate', (count) => {
-        chrome.storage.local.set({ roomUserCount: count });
+        ext.storage.local.set({ roomUserCount: count });
     });
 
     // D2. Full nickname list — emitted on every join / leave / disconnect.
     state.socket.on('userListUpdate', (list) => {
-        chrome.storage.local.set({ roomUserList: list });
+        ext.storage.local.set({ roomUserList: list });
     });
 
     // D3. Queue update — server broadcasts the full queue on every mutation.
     // Stored in chrome.storage so the popup's onChanged listener can
     // re-render the queue list in real time without reopening the popup.
     state.socket.on('queueUpdate', (queue) => {
-        chrome.storage.local.set({ roomQueue: queue });
+        ext.storage.local.set({ roomQueue: queue });
     });
 
     // E. New participant joined — leader sends current state to them.
@@ -496,11 +500,24 @@ const videoObserver = new MutationObserver(() => {
 videoObserver.observe(document.body, { childList: true, subtree: true });
 
 
-window.addEventListener('yt-navigate-finish', () => {
+// ── YOUTUBE NAVIGATION DETECTION ────────────────────────────────────────────
+// `yt-navigate-finish` is YouTube's custom SPA navigation event.
+// It fires reliably on Chrome but may be skipped on Firefox where YouTube's
+// internal router behaves differently.
+//
+// FIREFOX COMPAT: Logic is extracted into handleNavigation() and wired to
+// three sources so navigation is caught on both browsers:
+//   1. yt-navigate-finish — Chrome / modern YouTube (primary)
+//   2. popstate           — back / forward button
+//   3. 1 s setInterval   — YouTube pushState navigations (main SPA path)
+//
+// _lastUrl guard ensures only one URL_CHANGE is emitted per navigation
+// even when all three sources fire at once.
+let _lastUrl = location.href;
+
+function handleNavigation() {
     const isRemoteNav = sessionStorage.getItem('isRemoteNavigating');
     if (isRemoteNav === 'true') {
-        // This navigation was triggered by a remote URL_CHANGE or SYNC.
-        // Do not emit a new URL_CHANGE — it would create an infinite loop.
         sessionStorage.removeItem('isRemoteNavigating');
         return;
     }
@@ -509,32 +526,40 @@ window.addEventListener('yt-navigate-finish', () => {
 
     const currentUrl = location.href;
     if (!currentUrl.includes('watch?v=')) return;
+    if (currentUrl === _lastUrl) return;  // guard: no duplicate emits
+    _lastUrl = currentUrl;
 
     const pureUrl = cleanYouTubeUrl(currentUrl);
-
-    // Strip playlist params so all participants share the same canonical URL.
     if (currentUrl !== pureUrl) window.history.replaceState({}, '', pureUrl);
 
-    // withRemoteAction: suppresses our own play/seek events that fire
-    // immediately after the URL_CHANGE emit.
     withRemoteAction(() => {
         state.socket.emit('videoAction', {
-            type:    'URL_CHANGE',
-            newUrl:  pureUrl,
-            roomId:  state.roomId,
-            time:    0,
-            state:   true,
+            type:   'URL_CHANGE',
+            newUrl: pureUrl,
+            roomId: state.roomId,
+            time:   0,
+            state:  true,
         });
     });
-});
+}
+
+// 1. Primary — Chrome & Firefox 128+ with YouTube's custom event
+window.addEventListener('yt-navigate-finish', handleNavigation);
+
+// 2. Back / forward navigation
+window.addEventListener('popstate', handleNavigation);
+
+// 3. pushState fallback — YouTube's main navigation mechanism.
+//    _lastUrl guard makes this a no-op when URL hasn't changed.
+setInterval(() => { if (state.socket) handleNavigation(); }, 1000);
 
 
 // Listens for JOIN / LEAVE / QUEUE commands sent from the popup.
-chrome.runtime.onMessage.addListener((message) => {
+ext.runtime.onMessage.addListener((message) => {
     if (message.type === 'JOIN_NEW_ROOM') {
         sessionStorage.setItem('jamActive', 'true');
         connect(message.roomId);
-        chrome.runtime.sendMessage({ type: 'ROOM_JOINED', roomId: message.roomId });
+        ext.runtime.sendMessage({ type: 'ROOM_JOINED', roomId: message.roomId });
 
     } else if (message.type === 'LEAVE_ROOM') {
         if (state.socket) {
@@ -545,7 +570,7 @@ chrome.runtime.onMessage.addListener((message) => {
         }
         sessionStorage.removeItem('jamActive');
         // Ask background.js to clear the badge on this tab.
-        chrome.runtime.sendMessage({ type: 'SET_BADGE', text: '' });
+        ext.runtime.sendMessage({ type: 'SET_BADGE', text: '' });
 
     // ── QUEUE: ADD ───────────────────────────────────────────────────────────
     // popup.js has already resolved the video title via oEmbed and passes
@@ -577,7 +602,7 @@ chrome.runtime.onMessage.addListener((message) => {
 // Session recovery on page reload (F5).
 // If jamActive is set and a savedRoomId exists, reconnect automatically.
 if (sessionStorage.getItem('jamActive') === 'true') {
-    chrome.storage.local.get(['savedRoomId'], (res) => {
+    ext.storage.local.get(['savedRoomId'], (res) => {
         if (res.savedRoomId) connect(res.savedRoomId);
     });
 }

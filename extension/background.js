@@ -1,9 +1,13 @@
 // --- BADGE MESAJLARI ---
 // Content.js'ten gelen badge güncelleme isteklerini uygular.
-chrome.runtime.onMessage.addListener((message, sender) => {
+// [FIREFOX COMPAT] Single compatibility shim — works on Chrome and Firefox.
+// Chrome exposes `chrome.*`; Firefox exposes `browser.*`. Both work with `ext`.
+const ext = typeof browser !== 'undefined' ? browser : chrome;
+
+ext.runtime.onMessage.addListener((message, sender) => {
     if (message.type === "SET_BADGE" && sender.tab) {
-        chrome.action.setBadgeText({ text: message.text });
-        chrome.action.setBadgeBackgroundColor({ color: message.color });
+        ext.action.setBadgeText({ text: message.text, tabId: sender.tab.id });
+        ext.action.setBadgeBackgroundColor({ color: message.color, tabId: sender.tab.id });
     }
 });
 
@@ -15,8 +19,8 @@ chrome.runtime.onMessage.addListener((message, sender) => {
 // Neden background.js? Content script'in ömrü tab ile sona erer;
 // tab kapanma olayını güvenilir şekilde yakalayabilecek tek yer
 // her zaman canlı olan service worker'dır.
-chrome.tabs.onRemoved.addListener((tabId) => {
-    chrome.storage.local.get(['activeTabId'], (result) => {
+ext.tabs.onRemoved.addListener((tabId) => {
+    ext.storage.local.get(['activeTabId'], (result) => {
         // Kapanan tab, JamRoom'un aktif olduğu tab değilse işlem yapma.
         //
         // BUG FIX: activeTabId daha önce hiç storage'a yazılmıyordu.
@@ -27,7 +31,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
         if (result.activeTabId !== tabId) return;
 
         // Storage'ı temizle: oda oturumu artık geçersiz.
-        chrome.storage.local.remove([
+        ext.storage.local.remove([
             'savedRoomId',
             'activeTabId',
             'roomUserCount',
@@ -35,7 +39,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
             'roomQueue',   // Queue da temizlenir; yeni odada eski sıra görünmesin.
         ]);
 
-        chrome.action.setBadgeText({ text: "" });
+        ext.action.setBadgeText({ text: "" });
     });
 });
 
@@ -48,8 +52,8 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 // doğrudan background'a iletmek en temiz yol — storage'ı popup'tan
 // yazmak da işe yarardı ama background service worker'ın her zaman
 // ayakta olduğu garantisi daha güvenilir.
-chrome.runtime.onMessage.addListener((message) => {
+ext.runtime.onMessage.addListener((message) => {
     if (message.type === "SET_ACTIVE_TAB" && message.tabId) {
-        chrome.storage.local.set({ activeTabId: message.tabId });
+        ext.storage.local.set({ activeTabId: message.tabId });
     }
 });
