@@ -2,148 +2,403 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
-    body { width: 250px; font-family: sans-serif; padding: 15px; text-align: center; }
-    h3 { color: #ff0000; margin-top: 0; }
-    button { width: 100%; padding: 10px; border: none; border-radius: 4px; cursor: pointer; margin-top: 5px; font-weight: bold; }
-    #joinBtn  { background-color: #ff0000; color: white; }
-    #leaveBtn { background-color: #333;    color: white; }
-
-    /* Input wrapper — relative container so copyBtn can be
-       absolutely positioned inside without affecting layout */
-    .input-wrapper {
-      position: relative;
-      width: 94%;
-      margin: 0 auto 10px auto;
+    :root {
+      --red:    #ff0000;
+      --dark:   #111;
+      --mid:    #1c1c1c;
+      --border: #2a2a2a;
+      --muted:  #666;
+      --text:   #e8e8e8;
+      --green:  #00e676;
     }
 
-    /* Input gets right padding equal to button width so text
-       never slides under the button */
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      width: 280px;
+      background: var(--dark);
+      color: var(--text);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 13px;
+      overflow: hidden;
+    }
+
+    /* ── HEADER ── */
+    .header {
+      background: var(--mid);
+      padding: 10px 14px 0;
+      border-bottom: 1px solid var(--border);
+      text-align: center;
+    }
+
+    .logo {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 22px;
+      letter-spacing: 2px;
+      color: var(--red);
+      line-height: 1;
+    }
+
+    /* ── TABS ── */
+    .tabs { display: flex; gap: 2px; margin-top: 10px; }
+
+    .tab-btn {
+      flex: 1;
+      padding: 7px 0;
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--muted);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+    }
+
+    .tab-btn.active { color: var(--text); border-bottom-color: var(--red); }
+    .tab-btn:hover:not(.active) { color: #aaa; }
+
+    /* ── PANELS ── */
+    .panel { display: none; padding: 14px; }
+    .panel.active { display: block; }
+
+    /* ── STATUS ── */
+    #countDisplay {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 500;
+      margin-bottom: 12px;
+      min-height: 16px;
+      transition: color 0.2s;
+    }
+
+    #countDisplay.in-room { color: var(--green); }
+
+    /* ── INPUT WRAPPER ── */
+    .input-wrapper { position: relative; margin-bottom: 10px; }
+
     .input-wrapper input {
       width: 100%;
-      padding: 8px 38px 8px 8px;
-      box-sizing: border-box;
-      border: 1px solid #ccc;
-      border-radius: 4px;
+      padding: 8px 38px 8px 10px;
+      background: var(--mid);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 13px;
       outline: none;
-      font-size: 14px;
+      transition: border-color 0.15s;
     }
 
-    /* Copy button — absolutely pinned to the right edge.
-       Width and height are explicit so it is always square.
-       top/bottom: 0 + margin: auto = perfect vertical center
-       regardless of input height. */
+    .input-wrapper input:focus { border-color: #3a3a3a; }
+    .input-wrapper input::placeholder { color: #444; }
+
     #copyBtn {
       position: absolute;
-      right: 0;
-      top: 0;
-      bottom: 0;
+      right: 0; top: 0; bottom: 0;
       width: 34px;
-      margin: auto 0;
-      height: 34px;
-      padding: 0;
+      background: transparent;
       border: none;
-      border-left: 1px solid #ddd;
-      border-radius: 0 4px 4px 0;
-      background-color: #111;
+      border-left: 1px solid var(--border);
+      border-radius: 0 6px 6px 0;
+      color: var(--muted);
       cursor: pointer;
-      font-size: 16px;
-      line-height: 34px;
-      text-align: center;
-      color: #fff;
-      transition: background-color 0.15s ease;
-      display: none; /* shown via JS when in a room */
+      font-size: 14px;
+      transition: color 0.15s, background 0.15s;
+      display: none;
     }
 
-    #copyBtn:hover { background-color: #333; }
+    #copyBtn:hover { background: #222; color: var(--text); }
+    #copyBtn.btn--copied { color: var(--green); }
 
-    /* Green background + white checkmark after successful copy */
-    #copyBtn.btn--copied { background-color: #188038; }
-
-    /*
-      Toast notification — slides down from the top of the popup.
-      Starts above the viewport (translateY(-110%)) and animates
-      to visible position. Dismissed automatically after 2 s.
-    */
-    #toast {
-      position: fixed;
-      top: 10px;
-      left: 50%;
-      transform: translateX(-50%) translateY(-110%);
-      background-color: #323232;
-      color: #fff;
-      padding: 7px 16px;
-      border-radius: 20px;
-      font-size: 12px;
-      font-weight: bold;
-      white-space: nowrap;
-      pointer-events: none;
-      opacity: 0;
-      transition: transform 0.22s ease, opacity 0.22s ease;
-      z-index: 999;
+    /* ── BUTTONS ── */
+    .btn {
+      width: 100%;
+      padding: 9px;
+      border: none;
+      border-radius: 6px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      cursor: pointer;
+      margin-top: 6px;
+      transition: opacity 0.15s, transform 0.1s;
     }
 
-    /* .show slides the toast into view */
-    #toast.show {
-      transform: translateX(-50%) translateY(0);
-      opacity: 1;
-    }
+    .btn:active { transform: scale(0.98); }
+    .btn-red  { background: var(--red); color: #fff; }
+    .btn-dark { background: #252525; color: var(--text); }
+    .btn-red:hover  { opacity: 0.88; }
+    .btn-dark:hover { background: #2e2e2e; }
 
-    /* Member list — grows with content, scrolls after 120px */
-    #memberList {
-      margin-top: 12px;
-      text-align: left;
-      max-height: 120px;
-      overflow-y: auto;
-    }
+    /* ── MEMBER LIST ── */
+    #memberList { margin-top: 12px; max-height: 100px; overflow-y: auto; }
+    #memberList::-webkit-scrollbar { width: 3px; }
+    #memberList::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
     .member-item {
-      font-size: 13px;
-      color: #333;
-      padding: 4px 6px;
+      font-size: 12px;
+      color: #999;
+      padding: 3px 6px;
       border-radius: 4px;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
 
-    /* Zebra pattern improves readability on long lists */
-    .member-item:nth-child(even) { background-color: #f5f5f5; }
+    .member-item:nth-child(even) { background: #171717; }
+
+    /* ── TOAST ── */
+    #toast {
+      position: fixed;
+      top: 8px; left: 50%;
+      transform: translateX(-50%) translateY(-120%);
+      background: #252525;
+      border: 1px solid #333;
+      color: var(--text);
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      white-space: nowrap;
+      pointer-events: none;
+      opacity: 0;
+      transition: transform 0.2s ease, opacity 0.2s ease;
+      z-index: 999;
+    }
+
+    #toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+
+    /* ── QUEUE PANEL ── */
+    .queue-add {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+
+    .queue-add input {
+      flex: 1;
+      padding: 8px 10px;
+      background: var(--mid);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 12px;
+      outline: none;
+      transition: border-color 0.15s;
+      min-width: 0;
+    }
+
+    .queue-add input:focus { border-color: #3a3a3a; }
+    .queue-add input::placeholder { color: #444; }
+
+    #queueAddBtn {
+      flex-shrink: 0;
+      width: 34px;
+      height: 34px;
+      background: var(--red);
+      border: none;
+      border-radius: 6px;
+      color: #fff;
+      font-size: 20px;
+      line-height: 1;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #queueAddBtn:hover   { opacity: 0.88; }
+    #queueAddBtn:active  { transform: scale(0.95); }
+
+    /* ── QUEUE LIST ── */
+    #queueList { max-height: 188px; overflow-y: auto; }
+    #queueList::-webkit-scrollbar { width: 3px; }
+    #queueList::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    .queue-empty {
+      text-align: center;
+      color: var(--muted);
+      font-size: 12px;
+      padding: 28px 0;
+      line-height: 1.6;
+    }
+
+    .queue-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 8px;
+      border-radius: 6px;
+      background: var(--mid);
+      margin-bottom: 4px;
+      animation: slideIn 0.15s ease;
+    }
+
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(-4px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Playing indicator: first item gets a pulsing green dot */
+    .queue-item:first-child .queue-pos::before {
+      content: '';
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--green);
+      margin-right: 4px;
+      vertical-align: middle;
+      animation: blink 1.4s infinite;
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.2; }
+    }
+
+    .queue-pos {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 13px;
+      color: var(--muted);
+      min-width: 18px;
+      text-align: right;
+      flex-shrink: 0;
+    }
+
+    .queue-item:first-child .queue-pos { color: var(--green); }
+
+    .queue-info { flex: 1; min-width: 0; }
+
+    .queue-title {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .queue-by {
+      font-size: 10px;
+      color: var(--muted);
+      margin-top: 1px;
+    }
+
+    .queue-remove {
+      background: transparent;
+      border: none;
+      color: #444;
+      cursor: pointer;
+      font-size: 15px;
+      line-height: 1;
+      padding: 3px 5px;
+      border-radius: 4px;
+      transition: color 0.15s, background 0.15s;
+      flex-shrink: 0;
+    }
+
+    .queue-remove:hover { color: var(--red); background: #1a1a1a; }
+
+    .queue-meta {
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+
+    .queue-meta span { color: var(--red); font-weight: 600; }
+
+    /* Queue locked state */
+    .queue-locked {
+      text-align: center;
+      color: var(--muted);
+      font-size: 12px;
+      padding: 32px 10px;
+      line-height: 1.7;
+    }
+
+    .queue-locked .lock-icon { font-size: 26px; display: block; margin-bottom: 8px; }
   </style>
 </head>
 <body>
 
-  <!--
-    Toast lives at the top of the body so it overlays everything.
-    Text is set dynamically by showToast() in popup.js.
-  -->
   <div id="toast"></div>
 
-  <h3 data-i18n="popupTitle">JamRoom</h3>
-
-  <p id="countDisplay"
-     style="color:#555; font-size:14px; font-weight:bold; margin-bottom:10px;"
-     data-i18n="statusDefault">
-    Not in an active room.
-  </p>
-
-  <!--
-    .input-wrapper lets #copyBtn be positioned relative to the input.
-    #copyBtn starts hidden; updateCopyVisibility(true) reveals it
-    once the user successfully joins a room.
-    &#128203; = 📋 (clipboard icon), &#10003; = ✓ (check mark)
-    — both are pure ASCII escapes to avoid encoding issues.
-  -->
-  <div class="input-wrapper">
-    <input type="text" id="roomInput" value="room-1">
-    <button id="copyBtn" title="Copy room name">&#128203;</button>
+  <!-- HEADER with tab bar -->
+  <div class="header">
+    <div class="logo">JamRoom</div>
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="home"  data-i18n="tabHome">Home</button>
+      <button class="tab-btn"        data-tab="queue" data-i18n="tabQueue">Queue</button>
+    </div>
   </div>
 
-  <button id="joinBtn"  data-i18n="joinBtn">JOIN ROOM</button>
-  <button id="leaveBtn" data-i18n="leaveBtn">LEAVE ROOM</button>
+  <!-- ══ HOME PANEL ══ -->
+  <div class="panel active" id="panel-home">
+    <p id="countDisplay" data-i18n="statusDefault">Not in an active room.</p>
 
-  <!-- Populated by renderMemberList() in popup.js -->
-  <div id="memberList"></div>
+    <!--
+      .input-wrapper lets #copyBtn overlay the right edge of the input.
+      copyBtn starts hidden; shown via updateCopyVisibility(true) after join.
+    -->
+    <div class="input-wrapper">
+      <input type="text" id="roomInput" placeholder="room name…">
+      <button id="copyBtn" title="Copy room name">&#128203;</button>
+    </div>
+
+    <button class="btn btn-red"  id="joinBtn"  data-i18n="joinBtn">JOIN ROOM</button>
+    <button class="btn btn-dark" id="leaveBtn" data-i18n="leaveBtn">LEAVE ROOM</button>
+
+    <div id="memberList"></div>
+  </div>
+
+  <!-- ══ QUEUE PANEL ══ -->
+  <div class="panel" id="panel-queue">
+
+    <!--
+      #queueLocked: shown when the user is NOT in a room.
+      Prevents confusion about why the add field would be disabled.
+    -->
+    <div class="queue-locked" id="queueLocked">
+      <span class="lock-icon">🔒</span>
+      <span data-i18n="queueLockedMsg">Join a room first to manage the queue.</span>
+    </div>
+
+    <!--
+      #queueActive: shown only when the user IS in a room.
+      Contains the URL input + live queue list.
+    -->
+    <div id="queueActive" style="display:none">
+      <div class="queue-add">
+        <!--
+          Accepts a full YouTube URL.
+          popup.js extracts the video ID, fetches the title via oEmbed,
+          and emits queueAdd to the server.
+        -->
+        <input type="text" id="queueInput" placeholder="youtube.com/watch?v=…">
+        <button id="queueAddBtn" title="Add to queue">+</button>
+      </div>
+
+      <!-- e.g. "3 videos in queue" — updated by renderQueue() -->
+      <div class="queue-meta" id="queueMeta"></div>
+
+      <!-- Populated by renderQueue() -->
+      <div id="queueList"></div>
+    </div>
+
+  </div>
 
   <script src="popup.js" defer></script>
 </body>

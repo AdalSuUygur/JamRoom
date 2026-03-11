@@ -350,6 +350,13 @@ async function connect(id) {
         chrome.storage.local.set({ roomUserList: list });
     });
 
+    // D3. Queue update — server broadcasts the full queue on every mutation.
+    // Stored in chrome.storage so the popup's onChanged listener can
+    // re-render the queue list in real time without reopening the popup.
+    state.socket.on('queueUpdate', (queue) => {
+        chrome.storage.local.set({ roomQueue: queue });
+    });
+
     // E. New participant joined — leader sends current state to them.
     state.socket.on('getSyncData', (targetId) => {
         if (state.video) {
@@ -411,6 +418,7 @@ function detachEvents(v) {
     v.onplay    = null;
     v.onpause   = null;
     v.onseeking = null;
+    v.onended   = null;  // Clean up queue auto-advance listener on video switch.
 }
 
 // Attaches play / pause / seek listeners to a new video element.
@@ -441,6 +449,29 @@ function attachEvents(v) {
         if (!state.isRemoteAction && state.socket) {
             state.socket.emit('videoAction', { type: 'SEEK', time: v.currentTime, roomId: state.roomId });
         }
+    };
+
+    // QUEUE AUTO-ADVANCE:
+    // When the current video ends, emit `queueNext` so the server can pop
+    // the head of the queue and broadcast a URL_CHANGE to the whole room.
+    //
+    // Why only the leader (first socket)?
+    // Multiple clients would all emit `queueNext` at nearly the same time,
+    // causing the server to advance the queue more than once. The server
+    // already guards against this with a currentUrl mismatch check, so
+    // concurrent emits are safe — but we limit it to the leader anyway
+    // to reduce unnecessary traffic.
+    //
+    // "Leader" heuristic: the client that joined earliest is at index 0
+    // in the server's room set. We can't know this from the client side,
+    // so every client emits but the server deduplicates. This is the same
+    // pattern used for heartbeat responses.
+    v.onended = () => {
+        if (!state.socket || !state.roomId) return;
+        state.socket.emit('queueNext', {
+            roomId:     state.roomId,
+            currentUrl: cleanYouTubeUrl(location.href),
+        });
     };
 }
 
@@ -498,7 +529,7 @@ window.addEventListener('yt-navigate-finish', () => {
 });
 
 
-// Listens for JOIN / LEAVE commands sent from the popup.
+// Listens for JOIN / LEAVE / QUEUE commands sent from the popup.
 chrome.runtime.onMessage.addListener((message) => {
     if (message.type === 'JOIN_NEW_ROOM') {
         sessionStorage.setItem('jamActive', 'true');
@@ -515,6 +546,30 @@ chrome.runtime.onMessage.addListener((message) => {
         sessionStorage.removeItem('jamActive');
         // Ask background.js to clear the badge on this tab.
         chrome.runtime.sendMessage({ type: 'SET_BADGE', text: '' });
+
+    // ── QUEUE: ADD ───────────────────────────────────────────────────────────
+    // popup.js has already resolved the video title via oEmbed and passes
+    // { roomId, url, title, addedBy }. We just forward it to the server.
+    // The socket lives here (content.js), not in the popup — which is why
+    // the popup delegates the actual emit to us.
+    } else if (message.type === 'QUEUE_ADD') {
+        if (state.socket) {
+            state.socket.emit('queueAdd', {
+                roomId:  message.roomId,
+                url:     message.url,
+                title:   message.title,
+                addedBy: message.addedBy,
+            });
+        }
+
+    // ── QUEUE: REMOVE ────────────────────────────────────────────────────────
+    } else if (message.type === 'QUEUE_REMOVE') {
+        if (state.socket) {
+            state.socket.emit('queueRemove', {
+                roomId: message.roomId,
+                index:  message.index,
+            });
+        }
     }
 });
 

@@ -7,27 +7,22 @@
     "message": "Real-time playback sync for YouTube rooms (play/pause/seek).",
     "description": "Extension description shown in Chrome Web Store."
   },
-
   "popupTitle": {
     "message": "JamRoom",
     "description": "Heading displayed at the top of the popup."
   },
-
   "joinBtn": {
     "message": "JOIN ROOM",
     "description": "Label on the join button."
   },
-
   "leaveBtn": {
     "message": "LEAVE ROOM",
     "description": "Label on the leave button."
   },
-
   "statusDefault": {
     "message": "Not in an active room.",
     "description": "Shown when no room is active."
   },
-
   "statusJoining": {
     "message": "Joining: $ROOM_ID$...",
     "description": "Shown while joining a room.",
@@ -38,7 +33,6 @@
       }
     }
   },
-
   "statusJoined": {
     "message": "Joined: $ROOM_ID$",
     "description": "Shown after successfully joining a room.",
@@ -49,7 +43,6 @@
       }
     }
   },
-
   "statusInRoom": {
     "message": "In room: $COUNT$ users",
     "description": "Shows live user count in the current room.",
@@ -60,33 +53,60 @@
       }
     }
   },
-
   "errorEnterRoomName": {
     "message": "Please enter a room name.",
     "description": "Validation error when the room name input is empty."
   },
-
   "errorOpenYouTubeJoin": {
     "message": "Open a YouTube tab to use JamRoom.",
     "description": "Error when the active tab is not YouTube and the user tries to join."
   },
-
   "errorOpenYouTubeLeave": {
     "message": "Open a YouTube tab to leave the room.",
     "description": "Error when the active tab is not YouTube and the user tries to leave."
   },
   "shareBtn": {
-  "message": "SHARE ROOM",
-  "description": "Label on the share room button."
-},
-
-"shareCopied": {
-  "message": "COPIED!",
-  "description": "Shown briefly after copying the room name to clipboard."
-},
-
-"shareTooltip": {
-  "message": "Room name copied to clipboard",
-  "description": "Tooltip shown after copy action."
-}
+    "message": "SHARE ROOM",
+    "description": "Label on the share room button."
+  },
+  "shareCopied": {
+    "message": "COPIED!",
+    "description": "Shown briefly after copying the room name to clipboard."
+  },
+  "shareTooltip": {
+    "message": "Room name copied to clipboard",
+    "description": "Tooltip shown after copy action."
+  },
+  "tabHome": {
+    "message": "Home",
+    "description": "Home tab label."
+  },
+  "tabQueue": {
+    "message": "Queue",
+    "description": "Queue tab label."
+  },
+  "queueLockedMsg": {
+    "message": "Join a room first to manage the queue.",
+    "description": "Shown when queue tab is opened without being in a room."
+  },
+  "queueEmpty": {
+    "message": "No videos in queue yet.\nAdd a YouTube link above.",
+    "description": "Shown when the queue is empty."
+  },
+  "queueAdded": {
+    "message": "Added to queue!",
+    "description": "Toast after successfully adding a video."
+  },
+  "queueInvalidUrl": {
+    "message": "Please enter a valid YouTube URL.",
+    "description": "Validation error for queue input."
+  },
+  "queueCountOne": {
+    "message": "video in queue",
+    "description": "Singular queue count label."
+  },
+  "queueCountMany": {
+    "message": "videos in queue",
+    "description": "Plural queue count label."
+  }
 }
