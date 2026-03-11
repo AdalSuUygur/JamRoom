@@ -1,12 +1,7 @@
-// ─────────────────────────────────────────────
-// JamRoom — popup.js  (v2 — with Queue tab)
-// ─────────────────────────────────────────────
-// [FIREFOX COMPAT] Single compatibility shim — works on Chrome and Firefox.
-// Chrome exposes `chrome.*`; Firefox exposes `browser.*`. Both work with `ext`.
+
+// JamRoom — popup.js  (v2)
+
 const ext = typeof browser !== 'undefined' ? browser : chrome;
-
-
-// ── DOM refs (resolved once — DRY) ──────────────────────────────────────────
 const countDisplay = document.getElementById('countDisplay');
 const roomInput    = document.getElementById('roomInput');
 const copyBtn      = document.getElementById('copyBtn');
@@ -18,7 +13,6 @@ const queueMeta    = document.getElementById('queueMeta');
 const queueLocked  = document.getElementById('queueLocked');
 const queueActive  = document.getElementById('queueActive');
 
-
 // ── STATE ────────────────────────────────────────────────────────────────────
 // Single mutable object so every reader sees the same truth.
 const state = {
@@ -26,10 +20,8 @@ const state = {
   nickname: null,   // resolved nickname (from storage or server echo)
 };
 
-
 // ── TAB SWITCHING ────────────────────────────────────────────────────────────
 // Tab buttons carry [data-tab] attributes that match panel IDs.
-// One handler covers all tabs — no per-button event listeners (DRY).
 document.querySelectorAll('.tab-btn').forEach((btn) => {
   btn.addEventListener('click', () => {
     const target = btn.dataset.tab;
@@ -42,17 +34,13 @@ document.querySelectorAll('.tab-btn').forEach((btn) => {
   });
 });
 
-
 // ── applyI18n ────────────────────────────────────────────────────────────────
-// Replaces textContent of [data-i18n] elements with chrome.i18n values.
-// __MSG_key__ syntax only works in manifest fields, not popup HTML (MV3 rule).
 function applyI18n() {
   document.querySelectorAll('[data-i18n]').forEach((el) => {
     const msg = ext.i18n.getMessage(el.dataset.i18n);
     if (msg) el.textContent = msg;
   });
 }
-
 
 // ── setStatus ────────────────────────────────────────────────────────────────
 function setStatus(text, isInRoom = false) {
@@ -61,13 +49,11 @@ function setStatus(text, isInRoom = false) {
   countDisplay.classList.toggle('in-room', isInRoom);
 }
 
-
 // ── isYouTubeTab ─────────────────────────────────────────────────────────────
-// Extracted predicate — used by joinBtn and leaveBtn (DRY).
+// Extracted predicate — used by joinBtn and leaveBtn.
 function isYouTubeTab(tab) {
   return Boolean(tab?.url?.includes('youtube.com'));
 }
-
 
 // ── updateCopyVisibility ─────────────────────────────────────────────────────
 // Copy button is only meaningful when in an active room.
@@ -75,14 +61,12 @@ function updateCopyVisibility(show) {
   copyBtn.style.display = show ? 'block' : 'none';
 }
 
-
 // ── updateQueueVisibility ────────────────────────────────────────────────────
 // Swaps between the "locked" placeholder and the active queue UI.
 function updateQueueVisibility(show) {
   queueLocked.style.display  = show ? 'none'  : 'block';
   queueActive.style.display  = show ? 'block' : 'none';
 }
-
 
 // ── TOAST ────────────────────────────────────────────────────────────────────
 let toastTimer = null;
@@ -93,7 +77,6 @@ function showToast(message, duration = 2000) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => toast.classList.remove('show'), duration);
 }
-
 
 // ── COPY ROOM NAME ───────────────────────────────────────────────────────────
 // Uses roomInput.value as the single source of truth — no duplicate state.
@@ -119,7 +102,6 @@ copyBtn.addEventListener('click', () => {
   });
 });
 
-
 // ── JOIN ─────────────────────────────────────────────────────────────────────
 document.getElementById('joinBtn').addEventListener('click', () => {
   const roomId = roomInput.value.trim();
@@ -142,7 +124,6 @@ document.getElementById('joinBtn').addEventListener('click', () => {
   });
 });
 
-
 // ── LEAVE ────────────────────────────────────────────────────────────────────
 document.getElementById('leaveBtn').addEventListener('click', () => {
   ext.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -161,7 +142,6 @@ document.getElementById('leaveBtn').addEventListener('click', () => {
   });
 });
 
-
 // ── sendMessageToContent ─────────────────────────────────────────────────────
 // Single function for all content-script messages — badge management lives here
 // because the popup already has the active tab reference (avoids round-trip).
@@ -173,16 +153,12 @@ function sendMessageToContent(type, data) {
     if (type === 'JOIN_NEW_ROOM') {
       ext.action.setBadgeText({ text: 'ON', tabId: tabs[0].id });
       ext.action.setBadgeBackgroundColor({ color: '#00FF00', tabId: tabs[0].id });
-      // BUG FIX: activeTabId'yi background.js'e bildiriyoruz.
-      // Böylece onRemoved yalnızca bu tab kapandığında storage'ı temizler;
-      // başka bir tab kapandığında badge ve session kaybolmaz.
       ext.runtime.sendMessage({ type: 'SET_ACTIVE_TAB', tabId: tabs[0].id });
     } else if (type === 'LEAVE_ROOM') {
       ext.action.setBadgeText({ text: '', tabId: tabs[0].id });
     }
   });
 }
-
 
 // ── INCOMING MESSAGES (from content.js) ─────────────────────────────────────
 ext.runtime.onMessage.addListener((msg) => {
@@ -205,7 +181,6 @@ ext.runtime.onMessage.addListener((msg) => {
   }, 1200);
 });
 
-
 // ── STORAGE LISTENER (real-time while popup is open) ────────────────────────
 ext.storage.onChanged.addListener((changes) => {
   if (changes.roomUserList) {
@@ -223,7 +198,6 @@ ext.storage.onChanged.addListener((changes) => {
     renderQueue(changes.roomQueue.newValue || []);
   }
 });
-
 
 // ── SESSION RESTORE ──────────────────────────────────────────────────────────
 // Runs on every popup open — restores UI to match persisted state.
@@ -250,7 +224,6 @@ ext.storage.local.get(['savedRoomId', 'roomUserCount', 'roomUserList', 'roomQueu
   }
 });
 
-
 // ── renderMemberList ─────────────────────────────────────────────────────────
 // Maps a nickname array to member-item divs.
 // Unicode escape for 👤 keeps the file pure ASCII (avoids encoding issues).
@@ -263,15 +236,8 @@ function renderMemberList(list) {
     : '';
 }
 
-
 // ── QUEUE: ADD ───────────────────────────────────────────────────────────────
-// User pastes a YouTube URL → we extract the video ID, fetch the title via
-// YouTube's free oEmbed endpoint (no API key required), then emit queueAdd.
-//
-// Why oEmbed for the title?
-//   The server stores { url, title, addedBy } so every client sees a
-//   human-readable name instead of a raw URL. oEmbed is the lightest
-//   approach — no auth, no quota.
+// User pastes a YouTube URL → we extract the video ID, fetch the title via YouTube's free oEmbed endpoint (no API key required), then emit queueAdd.
 queueAddBtn.addEventListener('click', addToQueue);
 
 queueInput.addEventListener('keydown', (e) => {
@@ -352,9 +318,8 @@ async function fetchVideoTitle(url) {
   }
 }
 
-
 // ── QUEUE: REMOVE ────────────────────────────────────────────────────────────
-// Delegated listener on the container — handles dynamically added rows (DRY).
+// Delegated listener on the container — handles dynamically added rows.
 queueList.addEventListener('click', (e) => {
   const btn = e.target.closest('.queue-remove');
   if (!btn) return;
@@ -375,7 +340,6 @@ queueList.addEventListener('click', (e) => {
     });
   });
 });
-
 
 // ── renderQueue ──────────────────────────────────────────────────────────────
 // Renders the queue array into #queueList.
@@ -414,7 +378,6 @@ function escapeHtml(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 }
-
 
 // Bootstrap
 applyI18n();
