@@ -2,8 +2,8 @@
 // Content.js'ten gelen badge güncelleme isteklerini uygular.
 chrome.runtime.onMessage.addListener((message, sender) => {
     if (message.type === "SET_BADGE" && sender.tab) {
-        chrome.action.setBadgeText({ text: message.text, tabId: sender.tab.id });
-        chrome.action.setBadgeBackgroundColor({ color: message.color, tabId: sender.tab.id });
+        chrome.action.setBadgeText({ text: message.text });
+        chrome.action.setBadgeBackgroundColor({ color: message.color });
     }
 });
 
@@ -35,7 +35,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
             'roomQueue',   // Queue da temizlenir; yeni odada eski sıra görünmesin.
         ]);
 
-        chrome.action.setBadgeText({ text: "", tabId });
+        chrome.action.setBadgeText({ text: "" });
     });
 });
 

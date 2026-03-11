@@ -167,14 +167,14 @@ function sendMessageToContent(type, data) {
     chrome.tabs.sendMessage(tabs[0].id, { type, roomId: data });
 
     if (type === 'JOIN_NEW_ROOM') {
-      chrome.action.setBadgeText({ text: 'ON', tabId: tabs[0].id });
-      chrome.action.setBadgeBackgroundColor({ color: '#00FF00', tabId: tabs[0].id });
+      chrome.action.setBadgeText({ text: 'ON' });
+      chrome.action.setBadgeBackgroundColor({ color: '#00FF00' });
       // BUG FIX: activeTabId'yi background.js'e bildiriyoruz.
       // Böylece onRemoved yalnızca bu tab kapandığında storage'ı temizler;
       // başka bir tab kapandığında badge ve session kaybolmaz.
       chrome.runtime.sendMessage({ type: 'SET_ACTIVE_TAB', tabId: tabs[0].id });
     } else if (type === 'LEAVE_ROOM') {
-      chrome.action.setBadgeText({ text: '', tabId: tabs[0].id });
+      chrome.action.setBadgeText({ text: '' });
     }
   });
 }
